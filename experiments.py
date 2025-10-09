@@ -1,6 +1,7 @@
 import numpy as np
 import stim
 from pprint import pprint
+import re
 
 if __name__ == "__main__":
     experiment_num = 2
@@ -40,18 +41,26 @@ if __name__ == "__main__":
         measurement_flips = sim.get_measurement_flips()
         print(measurement_flips)
     elif experiment_num == 2:
-        bell_circuit_string_with_cfunc = """R 0
+        bell_circuit_string_with_cfunc = """I 0 1 2 3 4 5 6
 H 1
 CX 1 2
 CX 0 1
 MX 0
-MZ 1
-CFUNC bell_tell | -1 -2 | 2 3
-M 2
-CX 2 0
-M 2
-CFUNC bell_tell | -1 -2 | 3
-M 3"""
+MZ 1 # First bell measurement
+cfunc bell_tell | -2 -1 | 2
+H 3
+CX 3 4
+CX 2 3
+MX 2
+MZ 3 # Second bell measurement
+cfunc bell_tell | -2 -1 | 4
+H 5
+CX 5 6
+CX 4 5
+MX 4
+MZ 5 # Second bell measurement
+cfunc bell_tell | -2 -1 | 6
+M 6"""
         def bell_tell(measurements):
             # Pauli to apply in binary symplectic representation
             return np.array([measurements[1], measurements[0]])
@@ -70,7 +79,7 @@ M 3"""
             if line_split[0][0] == "M":
                 number_of_measurements += 1
             if len(line_split) > 1:
-                print("|".join(line_split))
+                #print("|".join(line_split))
                 functions_that_need_running.append({
                     "name": line_split[0].split()[1],
                     "measurements": [number_of_measurements + int(meas_loc) for meas_loc in line_split[1].split()],
@@ -81,39 +90,40 @@ M 3"""
             else:
                 bell_circuit_string += " ".join(line_split) + "\n"
                 bell_circuit_string_pauli_annotations += " ".join(line_split) + "\n"
-        # print(bell_circuit_string)
-        # print(bell_circuit_string_pauli_annotations)
-        # pprint(functions_that_need_running)
 
         sim = stim.FlipSimulator(
             batch_size = 1,
             disable_stabilizer_randomization = True
         )
-        # Iterate over the classical functions and find how they affect the Paulis
+        # Iterate over the classical function location and identify what measurements they could flip
         flip_matrices = []
-        for cfunc_index, cfunc in enumerate(functions_that_need_running[::-1]):
-            split_circ_at_pauli_loc = bell_circuit_string_pauli_annotations.split(f"PAULI({cfunc_index}) {" ".join(cfunc['pauli locations'])}")
-            print(split_circ_at_pauli_loc)
+        split_circ_at_pauli_loc = re.split("PAULI.*\n",bell_circuit_string_pauli_annotations)
+        for cfunc_index, cfunc in enumerate(functions_that_need_running):
             flip_matrix_list = []
             for pauli in ["X", "Z"]:
                 for pauli_loc in cfunc['pauli locations']:
-                    print(f"{pauli}{pauli_loc}")
-                    circuit_with_pauli_inserted = f"{pauli}_ERROR(1.0) {pauli_loc}".join(split_circ_at_pauli_loc)
-                    sim.do(stim.Circuit(circuit_with_pauli_inserted))
+                    split_circ_at_pauli_loc.insert(cfunc_index+1, f"{pauli}_ERROR(1.0) {pauli_loc}\n")
+                    sim.do(stim.Circuit("".join(split_circ_at_pauli_loc)))
+                    split_circ_at_pauli_loc.pop(cfunc_index+1)
                     flips = sim.get_measurement_flips()
                     flip_matrix_list.append(flips)
                     sim.clear()
             flip_matrix = np.hstack(flip_matrix_list)
-            flip_matrices.append(flip_matrix)
-        print(flip_matrices)
-
+            flip_matrices.append(flip_matrix.astype(int))
 
         # Sample the circuit
+        sampler = stim.Circuit(bell_circuit_string).compile_sampler()
+        measurements = sampler.sample(1000)
+        #print(measurements)
 
-
-        # bell_circuit = stim.Circuit(bell_circuit_string)
-        # print(bell_circuit.diagram())
-
-        # sampler = bell_circuit.compile_sampler()
-        # sample_data = sampler.sample(5)
-        # print(f"Sample Data: \n{sample_data}")
+        # Run classical functions
+        for cfunc_index, cfunc in enumerate(functions_that_need_running):
+            #print(measurements[:, cfunc['measurements']])
+            applied_paulis = np.apply_along_axis(classical_functions[cfunc['name']], 1, measurements[:, cfunc['measurements']])
+            #print(applied_paulis)
+            # print(measurements.astype(int))
+            # print(applied_paulis @ flip_matrices[cfunc_index].T)
+            measurements = (measurements + (applied_paulis @ flip_matrices[cfunc_index].T)) % 2
+        #print(measurements)
+        print(np.sum(measurements[:, -1]))
+            
