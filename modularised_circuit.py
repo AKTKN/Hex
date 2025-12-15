@@ -5,7 +5,7 @@ import shutil
 np.set_printoptions(linewidth=shutil.get_terminal_size().columns)
 import scipy
 from scipy.sparse import csc_matrix, csr_matrix
-from typing import List, Dict, Tuple, Callable
+from typing import List, Dict, Tuple, Callable, Any
 from pprint import pprint
 import re
 import pandas as pd
@@ -208,8 +208,8 @@ class modularised_circuit():
 
         return np.sum(logical_errors)
 
-if __name__ == "__main__":
-    def generate_noisey_teleportation_circuit(physical_error):
+def get_bell_logical_error(physical_error, num_shots, number_of_bell_teleportations):
+    def generate_noisey_teleportation_circuit(physical_error: int):
         return stim.Circuit(f"""
         RX 1
         R 2
@@ -225,71 +225,93 @@ if __name__ == "__main__":
         assert measurements.shape[1] == 2
         return measurements[:, [1, 0]]
 
-    def get_bell_logical_error(physical_error, number_of_bell_teleportation, num_shots):
-        bell_modules = []
-        for bell_num in range(number_of_bell_teleportation):
-            bell_circ = generate_noisey_teleportation_circuit(physical_error)
-            bell_modules.append(
-                measurement_module(
-                    bell_circ,
-                    c_func_bell,
-                    [("X2", len(bell_circ)),
-                    ("Z2", len(bell_circ)),
-                    ],
-                    new_support = [2*(bell_num), 2*(bell_num)+1, 2*(bell_num)+2]
-                )
-            )
+    bell_modules = []
+    for bell_num in range(number_of_bell_teleportations):
+        bell_circ = generate_noisey_teleportation_circuit(physical_error)
         bell_modules.append(
-            logical_measurement_module(
-                stim.Circuit("M 0"),
-                lambda x: x,
-                np.array([0]),
-                new_support = [2*(bell_num)+2]
+            measurement_module(
+                bell_circ,
+                c_func_bell,
+                [("X2", len(bell_circ)),
+                ("Z2", len(bell_circ)),
+                ],
+                new_support = [2*(bell_num), 2*(bell_num)+1, 2*(bell_num)+2]
             )
         )
-        # bell_modules.append(
-        #     logical_measurement_module(
-        #         stim.Circuit("""
-        #         H 0
-        #         M 0
-        #         """),
-        #         lambda x: x,
-        #         np.array([0]),
-        #         new_support = [11]
-        #     )
-        # )
+    bell_modules.append(
+        logical_measurement_module(
+            stim.Circuit("M 0"),
+            lambda x: x,
+            np.array([0]),
+            new_support = [2*(bell_num)+2]
+        )
+    )
+    # bell_modules.append(
+    #     logical_measurement_module(
+    #         stim.Circuit("""
+    #         H 0
+    #         M 0
+    #         """),
+    #         lambda x: x,
+    #         np.array([0]),
+    #         new_support = [11]
+    #     )
+    # )
 
-        mod_circ = modularised_circuit(bell_modules)
-        #print(mod_circ.circuit.diagram())
-        mod_circ.generate_correction_to_measurement_flip_map()
-        logical_errors = mod_circ.simulate(num_shots)
-        print(logical_errors)
-        return logical_errors
+    mod_circ = modularised_circuit(bell_modules)
+    #print(mod_circ.circuit.diagram())
+    mod_circ.generate_correction_to_measurement_flip_map()
+    logical_errors = mod_circ.simulate(num_shots)
+    print(logical_errors)
+    return logical_errors
 
-    # Plot the data
-    physical_error_range = np.linspace(0.01, 0.05, 5)
-    bell_repetition_range = [20, 30, 40]
 
-    num_shots = 50_000
+def generate_plot(
+        logical_error_function: Callable[[int, int], int],
+        physical_error_range: ndarray,
+        num_shots: int,
+        kwargs_with_labels: Tuple[Dict[str, Any], str],
+        title : str = None,
+):
 
     labeled_df_list = []
-    for bell_rep in bell_repetition_range:
+    for labelled_kwargs in kwargs_with_labels:
+        label = labelled_kwargs[1]
+        kwargs = labelled_kwargs[0]
         labeled_df = pd.DataFrame(columns=["physical error", "logical error", "logical error interval above", "logical error interval below", "label"])
         labeled_df["physical error"] =  physical_error_range
-        labeled_df["label"] = f"Teleportations = {bell_rep}"
+        labeled_df["label"] = label
         labeled_df["logical error interval above"] = 0
         labeled_df["logical error interval below"] = 0
-        print(f"{bell_rep} teleportations")
+        print(label)
         logical_errors = []
         for physical_error in physical_error_range:
-            logical_flips = get_bell_logical_error(physical_error, bell_rep, num_shots)
+            logical_flips = get_bell_logical_error(physical_error, num_shots, **kwargs)
             logical_errors.append(logical_flips / num_shots)
         labeled_df["logical error"] = logical_errors
         labeled_df_list.append(labeled_df)
     plot_df = pd.concat(labeled_df_list, ignore_index=True)
-    plot_df.to_csv(f"bell_teleportation.csv", index=False)
+
+    if title == None:
+        title = "Temp Plot"
+    plot_df.to_csv(f"{title}.csv", index=False)
     generate_threshold_plot(
-        "bell_teleportation.csv",
-        f"Noisy Teleportation",
-        output_path=f"Noisy Teleportation.pdf"
+        f"{title}.csv",
+        title,
+        output_path=f"{title}.pdf"
+    )
+    
+
+if __name__ == "__main__":
+    # Plot the data
+    physical_error_range = np.linspace(0.01, 0.05, 5)
+    bell_repetition_range = [20, 30, 40]
+    num_shots = 50_000
+
+    generate_plot(
+        get_bell_logical_error,
+        physical_error_range,
+        num_shots,
+        [({"number_of_bell_teleportations": bell_rep}, f"Teleportations = {bell_rep}") for bell_rep in bell_repetition_range],
+        title = "Noisy Teleportations"
     )
