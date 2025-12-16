@@ -235,6 +235,38 @@ def convert_pauli_to_error(pauli_string):
             error_circuit.append(stim.Circuit(f"Z_ERROR(1) {location}"))
     return error_circuit
 
+class no_measurement_module():
+    def __init__(self,
+               circuit: stim.Circuit,
+               new_support: List[int],
+               ) -> None:
+        self.circuit = circuit
+        assert circuit.num_measurements == 0
+        assert circuit.num_detectors == 0
+        self.num_measurements = 0
+        self.num_detectors = 0
+
+        self._change_support(new_support)
+
+    def _change_support(self,
+                       new_support: List[int],
+                       ) -> None:
+        # Update the circuit
+        if len(new_support) == 0:
+            new_support = range(self.circuit.num_qubits)
+        elif len(new_support) != self.circuit.num_qubits:
+            print("Module support not the correct size")
+            raise
+            
+        circuit_replacements = {f" {original}" : f" {new}" for original, new in enumerate(new_support)}
+        def circuit_replace_func(matched):
+            return circuit_replacements.get(matched.group(0), matched.group(0))
+            
+        circuit_regex_pattern = '|'.join(rf"{key}\b" for key in circuit_replacements.keys())
+        new_circuit_text = re.sub(circuit_regex_pattern, circuit_replace_func, str(self.circuit))
+
+        self.circuit = stim.Circuit(new_circuit_text)
+
 class modularised_circuit():
     def __init__(self,
                  circuit_modules: List[measurement_module]
@@ -340,8 +372,7 @@ class modularised_circuit():
                 previous_measurements += module.num_measurements
                 previous_detectors += module.num_detectors
 
-            #if isinstance(module, measurement_module):
-            else:
+            elif isinstance(module, measurement_module) or isinstance(module, detector_module):
                 module_measurements = measurement_samples[:, previous_measurements:previous_measurements+module.num_measurements]
                 # Detectors need to be recalculated for each modules because the measurements are being updated
                 detector_flips, observable_values = m2d_converter.convert(measurements=measurement_samples, separate_observables=True)

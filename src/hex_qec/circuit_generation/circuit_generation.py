@@ -366,3 +366,26 @@ def generate_bell_state_circuit(
 
     return circ
 
+def noiseless_unitary_state_prep(
+        code: str,
+        distance: int,
+        pauli: str,
+        eigenvalue: int,
+) -> stim.Circuit:
+
+    parity_check_tuple = get_parity_check_matrices(code, distance)
+    block_template, stabilizer_tuple, logical_0_prep_template, logical_plus_prep_template = create_stabilizers_and_block_template(*parity_check_tuple)
+    x_stabilizers, z_stabilizers, x_logicals, z_logicals = stabilizer_tuple
+    blocks = generate_blocks(1, block_template)
+    block = blocks[0]
+    circuit = stim.Circuit()
+    if pauli.lower() == "x":
+        ideal_preparation_circuit(circuit, block, logical_plus_prep_template)
+        if eigenvalue == 1:
+            circuit.append("Z", block["data_qubits"])
+    elif pauli.lower() == "z":
+        ideal_preparation_circuit(circuit, block, logical_0_prep_template)
+        if eigenvalue == 1:
+            circuit.append("X", block["data_qubits"])
+
+    return circuit
