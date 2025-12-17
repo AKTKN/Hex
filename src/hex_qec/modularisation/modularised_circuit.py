@@ -33,7 +33,7 @@ class logical_measurement_module():
             c_func_output = c_func(test_c_func_input)
             assert c_func_output.shape == (test_batch_size, len(c_func_expected_output))
         except AssertionError as a:
-            print(f"The output size of c_func doesn't match the fault array")
+            print(f"The output size of c_func doesn't match the size of the expected output")
             raise
         except Exception as e:
             print(f"Testing c_func resulted in the following error: {e}")
