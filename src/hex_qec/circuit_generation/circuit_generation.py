@@ -265,21 +265,21 @@ def stabilizer_measurement_circuit(
                 circ.append("DETECTOR", [stim.target_rec(-(2*num_z_stabilizers + num_x_stabilizers) + stab_num), stim.target_rec(-num_z_stabilizers + stab_num)])
 
 
-    # Noisy physical qubit measurement
-    qubit_measurement(circ, pauli, block, prob)
+    # # Noisy physical qubit measurement
+    # qubit_measurement(circ, pauli, block, prob)
 
-    if not disable_final_detectors:
-        # Form detectors between directly measured qubits and the previous stabilizer measurements
-        for stab_num in range(num_stabilizers):
-            circ.append("DETECTOR", [stim.target_rec(-n - num_stabilizers + stab_num)] + [stim.target_rec(-n + i) for i in z_pcm.col[z_pcm.row == stab_num]])
+    # if not disable_final_detectors:
+    #     # Form detectors between directly measured qubits and the previous stabilizer measurements
+    #     for stab_num in range(num_stabilizers):
+    #         circ.append("DETECTOR", [stim.target_rec(-n - num_stabilizers + stab_num)] + [stim.target_rec(-n + i) for i in z_pcm.col[z_pcm.row == stab_num]])
 
-        circ.append("OBSERVABLE_INCLUDE", [stim.target_rec(-n + i) for i in z_logical_binary.nonzero()[1]], 0)
+    #     circ.append("OBSERVABLE_INCLUDE", [stim.target_rec(-n + i) for i in z_logical_binary.nonzero()[1]], 0)
 
-    debug and print(f"Number of detectors: {circ.num_detectors} = {circ.num_detectors / num_stabilizers} * {num_stabilizers}(number of stabilizers)")
+    # debug and print(f"Number of detectors: {circ.num_detectors} = {circ.num_detectors / num_stabilizers} * {num_stabilizers}(number of stabilizers)")
 
     return circ
 
-def generate_bell_state_circuit(
+def stabilizer_measurement_circuit_both_detectors(
         parity_check_tuple,
         # stabilizer_tuple,
         # block_template,
@@ -291,69 +291,45 @@ def generate_bell_state_circuit(
 ):
     block_template, stabilizer_tuple, logical_0_prep_template, logical_plus_prep_template = create_stabilizers_and_block_template(*parity_check_tuple)
     x_stabilizers, z_stabilizers, x_logicals, z_logicals = stabilizer_tuple
-    blocks = generate_blocks(2, block_template)
-    block_0 = blocks[0]
-    block_1 = blocks[1]
+    blocks = generate_blocks(1, block_template)
+    block = blocks[0]
     circ = stim.Circuit()
 
-
-    n = len(block_template["data_qubits"])
-    num_z_stabilizers = len(block_template["z_ancillas"])
-    num_x_stabilizers = len(block_template["x_ancillas"])
-
-    ####################################
-    # Prepare block 0 in the |+> state #
-    ####################################
-
-    ideal_preparation_circuit(circ, block_0, logical_plus_prep_template)
-
-    # # Noisey physical qubit state preparation
-    # qubit_initialisation(circ, "X", block_0, prob)
-    # # Measure the Z stabilzers
-    # measure_Z_stabilizers(circ, z_stabilizers, block_0, 0.0)
-
-    # # There are no initial detectors because the physical qubit stabilizers are different to the first rounds of stabilizer measurement
-    
-    # # Perform multiple rounds of syndrome measurement
-    # for syndrome_repetition in range(2, syndrome_repetitions+1):
-    #     measure_Z_stabilizers(circ, z_stabilizers, block_0, 0.0)
-    #     for stab_num in range(num_z_stabilizers):
-    #         circ.append("DETECTOR", [stim.target_rec(-2*num_z_stabilizers + stab_num), stim.target_rec(-num_z_stabilizers + stab_num)])
-
-
-    ####################################
-    # Prepare block 1 in the |0> state #
-    ####################################
-
-
-    #ideal_preparation_circuit(circ, block_1, logical_plus_prep_template)
+    n = len(block["data_qubits"])
+    num_z_stabilizers = len(block["z_ancillas"])
+    num_x_stabilizers = len(block["x_ancillas"])
 
     # Noisey physical qubit state preparation
-    qubit_initialisation(circ, "Z", block_1, 0.0)
-    # Measure the X stabilzers
-    measure_X_stabilizers(circ, x_stabilizers, block_1, 0.0)
+    qubit_initialisation(circ, pauli, block, prob)
 
-    # There are no initial detectors because the physical qubit stabilizers are different to the first rounds of stabilizer measurement
-    
-    # Perform multiple rounds of syndrome measurement
-    for syndrome_repetition in range(2, syndrome_repetitions+1):
-        measure_X_stabilizers(circ, x_stabilizers, block_1, 0.0)
+    # First found of stabilizer measurement
+    measure_X_stabilizers(circ, x_stabilizers, block, prob)
+    measure_Z_stabilizers(circ, z_stabilizers, block, prob)
+
+    # Initial detectors
+    if pauli.lower() == "x":
         for stab_num in range(num_x_stabilizers):
-            circ.append("DETECTOR", [stim.target_rec(-2*num_x_stabilizers + stab_num), stim.target_rec(-num_x_stabilizers + stab_num)])
+            #print(-num_stabilizers + stab_num)
+            circ.append("DETECTOR", [stim.target_rec(-(num_z_stabilizers + num_x_stabilizers) + stab_num)])
+    elif pauli.lower() == "z":
+        for stab_num in range(num_z_stabilizers):
+            #print(-num_stabilizers + stab_num)
+            circ.append("DETECTOR", [stim.target_rec(-num_z_stabilizers + stab_num)])
 
-    ############################################################
-    # Perform a transversal CNOT creating a logical bell state #
-    ############################################################
+    for syndrome_repetition in range(2, syndrome_repetitions+1):
+        measure_X_stabilizers(circ, x_stabilizers, block, prob)
+        measure_Z_stabilizers(circ, z_stabilizers, block, prob)
+        # Add detectors
+        # if pauli.lower() == "x":
+        for stab_num in range(num_x_stabilizers):
+            circ.append("DETECTOR", [stim.target_rec(-2*(num_z_stabilizers + num_x_stabilizers) + stab_num), stim.target_rec(-(num_z_stabilizers + num_x_stabilizers) + stab_num)])
+        # elif pauli.lower() == "z":
+        for stab_num in range(num_z_stabilizers):
+            circ.append("DETECTOR", [stim.target_rec(-(2*num_z_stabilizers + num_x_stabilizers) + stab_num), stim.target_rec(-num_z_stabilizers + stab_num)])
 
-    transversal_cnot(circ, block_0, block_1, 0.0)
 
-    ###########################################################
-    # Measure all the data qubits in the provided pauli basis #
-    ###########################################################
-
-    # Noisy physical qubit measurement
-    qubit_measurement(circ, pauli, block_0, 0.0)
-    qubit_measurement(circ, pauli, block_1, 0.0)
+    # # Noisy physical qubit measurement
+    # qubit_measurement(circ, pauli, block, prob)
 
     # if not disable_final_detectors:
     #     # Form detectors between directly measured qubits and the previous stabilizer measurements
@@ -362,7 +338,7 @@ def generate_bell_state_circuit(
 
     #     circ.append("OBSERVABLE_INCLUDE", [stim.target_rec(-n + i) for i in z_logical_binary.nonzero()[1]], 0)
 
-    debug and print(f"Number of detectors: {circ.num_detectors} = {circ.num_detectors / num_stabilizers} * {num_stabilizers}(number of stabilizers)")
+    # debug and print(f"Number of detectors: {circ.num_detectors} = {circ.num_detectors / num_stabilizers} * {num_stabilizers}(number of stabilizers)")
 
     return circ
 
