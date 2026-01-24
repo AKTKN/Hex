@@ -8,6 +8,9 @@ build/
 # Data
 *.csv
 *.pdf
+*.json
+*.log
+*.yaml
 
 # Virtual environments
 venv/

@@ -2,6 +2,7 @@ import stim
 import pymatching
 from stimbposd import detector_error_model_to_check_matrices
 import numpy as np
+np.set_printoptions(linewidth=200)
 from numpy import ndarray
 import shutil
 np.set_printoptions(linewidth=shutil.get_terminal_size().columns)
@@ -62,9 +63,10 @@ class css_detector_module():
     def __init__(self,
                  circuit: stim.Circuit,
                  decoder_generator:  Callable[[ndarray, List[float]], Callable[[ndarray], ndarray]],
+                 parity_check_tuple : Tuple[ndarray],
                  x_detectors : List[int],
                  z_detectors : List[int],
-                 new_support: List[int],
+                 new_support : List[int],
                  matchable : bool = True,
                  ) -> None:
         self.circuit = circuit
@@ -72,8 +74,16 @@ class css_detector_module():
         self.num_detectors = circuit.num_detectors
         self.matchable = matchable
         self.decoder_generator = decoder_generator
+        self.parity_check_tuple = parity_check_tuple
         self.x_detectors = x_detectors
         self.z_detectors = z_detectors
+        self.new_support = new_support
+
+        self.x_pcm = self.parity_check_tuple[0]
+        self.z_pcm = self.parity_check_tuple[1]
+        self.num_x_stabilizers = self.x_pcm.shape[0]
+        self.num_z_stabilizers = self.z_pcm.shape[0]
+        self.num_data_qubits = self.x_pcm.shape[1]
 
         assert circuit.num_detectors > 0
         assert set(x_detectors).intersection(set(z_detectors)) == set()
@@ -101,27 +111,46 @@ class css_detector_module():
         self._generate_c_func()
 
     def _generate_dem(self):
-        self.dem = self.circuit.detector_error_model()
-        self.x_dem = stim.DetectorErrorModel("\n".join(list(map(
-            lambda dem_instr: str(dem_instr),
-            list(filter(self.x_det_filter_function, self.dem))
-        ))))
-        self.z_dem = stim.DetectorErrorModel("\n".join(list(map(
-            lambda dem_instr: str(dem_instr),
-            list(filter(self.z_det_filter_function, self.dem))
-        ))))
+        # Build seperate circuits with the x and z detectors
+        count_det = 0
+        self.x_det_circuit = stim.Circuit()
+        self.z_det_circuit = stim.Circuit()
+        for instruction in self.circuit:
+            if instruction.name == "DETECTOR":
+                if count_det in self.x_detectors:
+                    self.x_det_circuit.append(instruction)
+                elif count_det in self.z_detectors:
+                    self.z_det_circuit.append(instruction)
+                else:
+                    raise
+                count_det += 1
+            else:
+                self.x_det_circuit.append(instruction)
+                self.z_det_circuit.append(instruction)
+
+        # self.dem = self.circuit.detector_error_model()
+        # self.x_dem = stim.DetectorErrorModel("\n".join(list(map(
+        #     lambda dem_instr: str(dem_instr),
+        #     list(filter(self.x_det_filter_function, self.dem))
+        # ))))
+        # self.z_dem = stim.DetectorErrorModel("\n".join(list(map(
+        #     lambda dem_instr: str(dem_instr),
+        #     list(filter(self.z_det_filter_function, self.dem))
+        # ))))
+        self.x_dem = self.x_det_circuit.detector_error_model()
+        self.z_dem = self.z_det_circuit.detector_error_model()
         self.x_dem_data = detector_error_model_to_check_matrices(self.x_dem, allow_undecomposed_hyperedges=True)
         self.z_dem_data = detector_error_model_to_check_matrices(self.z_dem, allow_undecomposed_hyperedges=True)
 
-        # Conver DEMs to check matrices
+        # Convert DEMs to check matrices
         if self.matchable:
             # # X dem
-            self.x_dem_check_matrix = self.x_dem_data.edge_check_matrix[self.x_detectors, :]
+            self.x_dem_check_matrix = self.x_dem_data.edge_check_matrix
             self.x_dem_hyperedge_to_edge = self.x_dem_data.hyperedge_to_edge_matrix
             self.x_dem_priors = self.x_dem_hyperedge_to_edge @ self.x_dem_data.priors
             self.x_weights = (np.log1p(self.x_dem_priors) - np.log(self.x_dem_priors))
             # Z dem
-            self.z_dem_check_matrix = self.z_dem_data.edge_check_matrix[self.z_detectors, :]
+            self.z_dem_check_matrix = self.z_dem_data.edge_check_matrix
             self.z_dem_hyperedge_to_edge = self.z_dem_data.hyperedge_to_edge_matrix
             self.z_dem_priors = self.z_dem_hyperedge_to_edge @ self.z_dem_data.priors
             self.z_weights = (np.log1p(self.z_dem_priors) - np.log(self.z_dem_priors))
@@ -136,15 +165,101 @@ class css_detector_module():
             self.z_weights = self.z_dem_priors
 
     def _generate_c_func(self) -> None:
-        self.x_decoder = self.decoder_generator(self.x_dem_check_matrix)
-        self.z_decoder = self.decoder_generator(self.z_dem_check_matrix)
-        def c_func(detector_flips: ndarray
+        self.x_dem_decoder = self.decoder_generator(self.x_dem_check_matrix)
+        self.z_dem_decoder = self.decoder_generator(self.z_dem_check_matrix)
+        self.x_decoder = self.decoder_generator(self.x_pcm)
+        self.z_decoder = self.decoder_generator(self.z_pcm)
+
+        # Calculate correction maps for just the measurements in this module
+        flip_sim = stim.FlipSimulator(batch_size=1, disable_stabilizer_randomization=True)
+        #####################
+        # X dem corrections #
+        #####################
+        detector_flips = []
+        measurement_flips = []
+        correction_array = self.x_correction_array
+        circuit = self.x_det_circuit
+
+        for pauli_correction, location in correction_array:
+            # Construct circuit with the pauli correction inserted
+            circuit_before_correction = circuit[:location].without_noise()
+            circuit_after_correction = circuit[location+1:].without_noise()
+            flip_circuit = circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction
+            # Use the flip simulator to find what measurements and detectors are flipped by this correction
+            flip_sim.do(flip_circuit)
+            measurements_flipped = flip_sim.get_measurement_flips().T
+            detectors_flipped = flip_sim.get_detector_flips().T
+            detector_flips.append(detectors_flipped)
+            measurement_flips.append(measurements_flipped)
+            flip_sim.clear()
+
+        self.x_dem_correction_to_local_detector_flips = np.vstack(detector_flips)
+        self.x_dem_correction_to_local_measurement_flips = np.vstack(measurement_flips)
+        # For matchable dem we need to conver this into one where the faults are edges
+        if self.matchable:
+            self.x_dem_correction_to_local_detector_flips = (self.x_dem_hyperedge_to_edge @ self.x_dem_correction_to_local_detector_flips) % 2
+            self.x_dem_correction_to_local_measurement_flips = (self.x_dem_hyperedge_to_edge @ self.x_dem_correction_to_local_measurement_flips) % 2
+
+        #####################
+        # Z dem corrections #
+        #####################
+        detector_flips = []
+        measurement_flips = []
+        correction_array = self.z_correction_array
+        circuit = self.z_det_circuit
+
+        for pauli_correction, location in correction_array:
+            # Construct circuit with the pauli correction inserted
+            circuit_before_correction = circuit[:location].without_noise()
+            circuit_after_correction = circuit[location+1:].without_noise()
+            flip_circuit = circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction
+            # Use the flip simulator to find what measurements and detectors are flipped by this correction
+            flip_sim.do(flip_circuit)
+            measurements_flipped = flip_sim.get_measurement_flips().T
+            detectors_flipped = flip_sim.get_detector_flips().T
+            detector_flips.append(detectors_flipped)
+            measurement_flips.append(measurements_flipped)
+            flip_sim.clear()
+
+        self.z_dem_correction_to_local_detector_flips = np.vstack(detector_flips)
+        self.z_dem_correction_to_local_measurement_flips = np.vstack(measurement_flips)
+        # For matchable dem we need to conver this into one where the faults are edges
+        if self.matchable:
+            self.z_dem_correction_to_local_detector_flips = (self.z_dem_hyperedge_to_edge @ self.z_dem_correction_to_local_detector_flips) % 2
+            self.z_dem_correction_to_local_measurement_flips = (self.z_dem_hyperedge_to_edge @ self.z_dem_correction_to_local_measurement_flips) % 2
+
+        def c_func(measurement_samples: ndarray
                    ) -> ndarray:
-            x_detector_flips = detector_flips[:, self.x_detectors]
-            z_detector_flips = detector_flips[:, self.z_detectors]
-            corrections_for_x_detectors = self.x_decoder.decode_batch(x_detector_flips)
-            corrections_for_z_detectors = self.z_decoder.decode_batch(z_detector_flips)
-            combined_corrections = np.hstack([corrections_for_x_detectors, corrections_for_z_detectors])
+
+            x_m2d_converter = self.x_det_circuit.compile_m2d_converter()
+            x_detector_flips, x_observable_values = x_m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
+            z_m2d_converter = self.z_det_circuit.compile_m2d_converter()
+            z_detector_flips, z_observable_values = z_m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
+
+
+            # x_detector_flips = detector_flips[:, self.x_detectors]
+            # z_detector_flips = detector_flips[:, self.z_detectors]
+            corrections_for_x_detectors = self.x_dem_decoder.decode_batch(x_detector_flips)
+            corrections_for_z_detectors = self.z_dem_decoder.decode_batch(z_detector_flips)
+
+            # Need to update the measurements using the detector corrections, before correcting the stabilizers
+            measurements_corrections_from_x_detectors = (csr_matrix(corrections_for_x_detectors) @ csc_matrix(self.x_dem_correction_to_local_measurement_flips)).toarray() % 2
+            measurements_corrections_from_z_detectors = (csr_matrix(corrections_for_z_detectors) @ csc_matrix(self.z_dem_correction_to_local_measurement_flips)).toarray() % 2
+            measurement_samples = (measurement_samples + measurements_corrections_from_x_detectors) % 2
+            measurement_samples = (measurement_samples + measurements_corrections_from_z_detectors) % 2
+
+            # Assume the circuit is alternating X and Z stabilizer measurements
+            last_x_stabilizer_measurements = measurement_samples[:, -(self.num_x_stabilizers + self.num_z_stabilizers):-self.num_z_stabilizers]
+            last_z_stabilizer_measurements = measurement_samples[:, -self.num_z_stabilizers:]
+            correction_for_x_stabilizers = self.x_decoder.decode_batch(last_x_stabilizer_measurements)
+            correction_for_z_stabilizers = self.z_decoder.decode_batch(last_z_stabilizer_measurements)
+            # print_array_with_partitions(measurement_samples.astype(int), [0, 4, 8, 12, 16, 20])
+            # print(last_x_stabilizer_measurements.astype(int))
+            # print(correction_for_x_stabilizers)
+            # print(last_z_stabilizer_measurements.astype(int))
+            # print(correction_for_z_stabilizers)
+
+            combined_corrections = np.hstack([corrections_for_x_detectors, corrections_for_z_detectors, correction_for_x_stabilizers, correction_for_z_stabilizers])
             return combined_corrections
 
         self.c_func = c_func
@@ -167,8 +282,8 @@ class css_detector_module():
     def _generate_correction_array(self):
         self.x_correction_array = []
         self.z_correction_array = []
-        for pauli_dem in [self.x_dem, self.z_dem]:
-            circuit_explain_errors = self.circuit.explain_detector_error_model_errors(
+        for pauli_dem, circuit in [(self.x_dem, self.x_det_circuit), (self.z_dem, self.z_det_circuit)]:
+            circuit_explain_errors = circuit.explain_detector_error_model_errors(
                 dem_filter = pauli_dem,
                 reduce_to_one_representative_error=True,
             )
@@ -178,7 +293,7 @@ class css_detector_module():
                 stack_frame = error_location.stack_frames[0]
                 instruction_offset = stack_frame.instruction_offset
                 # Get Pauli of fault
-                pauli_fault = self._get_pauli_product_from_error_location(error_location, self.circuit.num_qubits)
+                pauli_fault = self._get_pauli_product_from_error_location(error_location, circuit.num_qubits)
                 if pauli_dem == self.x_dem:
                     self.x_correction_array.append((pauli_fault, instruction_offset))
                 else:
@@ -220,53 +335,115 @@ class css_detector_module():
                                       previous_detectors: int,
                                       ) -> None:
         flip_sim = stim.FlipSimulator(batch_size=1, disable_stabilizer_randomization=True)
-        for pauli in ["x", "z"]:
-            detector_flips = []
-            measurement_flips = []
-            if pauli == "x":
-                correction_array = self.x_correction_array
-            else:
-                correction_array = self.z_correction_array
-            for pauli_correction, location in correction_array:
-                # Construct circuit with the pauli correction inserted
-                circuit_before_correction = self.circuit[:location].without_noise()
-                circuit_after_correction = self.circuit[location+1:].without_noise()
-                flip_circuit = circuit_before_module + circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction + circuit_after_module
-                # Use the flip simulator to find what measurements and detectors are flipped by this correction
-                flip_sim.do(flip_circuit)
-                measurements_flipped = flip_sim.get_measurement_flips().T
-                detectors_flipped = flip_sim.get_detector_flips().T
-                detector_flips.append(detectors_flipped)
-                measurement_flips.append(measurements_flipped)
-                flip_sim.clear()
 
-            if pauli == "x":
-                self.x_correction_to_detector_flips = np.vstack(detector_flips)
-                self.x_correction_to_measurement_flips = np.vstack(measurement_flips)
-                # For matchable dem we need to conver this into one where the faults are edges
-                if self.matchable:
-                    self.x_correction_to_detector_flips = (self.x_dem_hyperedge_to_edge @ self.x_correction_to_detector_flips) % 2
-                    self.x_correction_to_measurement_flips = (self.x_dem_hyperedge_to_edge @ self.x_correction_to_measurement_flips) % 2
+        #####################
+        # X dem corrections #
+        #####################
+        detector_flips = []
+        measurement_flips = []
+        correction_array = self.x_correction_array
+        circuit = self.x_det_circuit
 
-                # self.dem_check_matrix is the check matrix for the dem in that specific module
-                # module.correction_to_detector_flips is how the corrections affect all the detectors in the circuit, even the ones outside this module
-                # To compare them I need to splce module.correction_to_detectors_flips to only include the detectors for this specific module
-                assert (self.x_dem_check_matrix.T == self.x_correction_to_detector_flips[:, [det + previous_detectors for det in self.x_detectors]]).all()
-            else:
-                self.z_correction_to_detector_flips = np.vstack(detector_flips)
-                self.z_correction_to_measurement_flips = np.vstack(measurement_flips)
-                # For matchable dem we need to conver this into one where the faults are edges
-                if self.matchable:
-                    self.z_correction_to_detector_flips = (self.z_dem_hyperedge_to_edge @ self.z_correction_to_detector_flips) % 2
-                    self.z_correction_to_measurement_flips = (self.z_dem_hyperedge_to_edge @ self.z_correction_to_measurement_flips) % 2
-                 
-                # self.dem_check_matrix is the check matrix for the dem in that specific module
-                # module.correction_to_detector_flips is how the corrections affect all the detectors in the circuit, even the ones outside this module
-                # To compare them I need to splce module.correction_to_detectors_flips to only include the detectors for this specific module
-                assert (self.z_dem_check_matrix.T == self.z_correction_to_detector_flips[:, [det + previous_detectors for det in self.z_detectors]]).all()
+        for pauli_correction, location in correction_array:
+            # Construct circuit with the pauli correction inserted
+            circuit_before_correction = circuit[:location].without_noise()
+            circuit_after_correction = circuit[location+1:].without_noise()
+            flip_circuit = circuit_before_module + circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction + circuit_after_module
+            # Use the flip simulator to find what measurements and detectors are flipped by this correction
+            flip_sim.do(flip_circuit)
+            measurements_flipped = flip_sim.get_measurement_flips().T
+            detectors_flipped = flip_sim.get_detector_flips().T
+            detector_flips.append(detectors_flipped)
+            measurement_flips.append(measurements_flipped)
+            flip_sim.clear()
 
-        self.correction_to_measurement_flips = np.vstack([self.x_correction_to_measurement_flips, self.z_correction_to_measurement_flips])
+        self.x_dem_correction_to_detector_flips = np.vstack(detector_flips)
+        self.x_dem_correction_to_measurement_flips = np.vstack(measurement_flips)
+        # For matchable dem we need to conver this into one where the faults are edges
+        if self.matchable:
+            self.x_dem_correction_to_detector_flips = (self.x_dem_hyperedge_to_edge @ self.x_dem_correction_to_detector_flips) % 2
+            self.x_dem_correction_to_measurement_flips = (self.x_dem_hyperedge_to_edge @ self.x_dem_correction_to_measurement_flips) % 2
 
+        # self.dem_check_matrix is the check matrix for the dem in that specific module
+        # module.dem_correction_to_detector_flips is how the dem_corrections affect all the detectors in the circuit, even the ones outside this module
+        # To compare them I need to splce module.dem_correction_to_detectors_flips to only include the detectors for this specific module
+        assert (self.x_dem_check_matrix.T == self.x_dem_correction_to_detector_flips[:, previous_detectors:previous_detectors+len(self.x_detectors)]).all()
+
+        ############################
+        # X stabilizer corrections #
+        ############################
+        detector_flips = []
+        measurement_flips = []
+        # Generate correction map for the Z stabilizer measurements at the end of the circuit
+        for qubit in self.new_support[:self.num_data_qubits]: # The circuit, before change of support, is assumed to have the first set of qubits be the data qubits
+            flip_circuit = circuit_before_module + self.circuit.without_noise() + convert_pauli_to_error(stim.PauliString(f"Z{qubit}")) + circuit_after_module
+            flip_sim.do(flip_circuit)
+            measurements_flipped = flip_sim.get_measurement_flips().T
+            detectors_flipped = flip_sim.get_detector_flips().T
+            detector_flips.append(detectors_flipped)
+            measurement_flips.append(measurements_flipped)
+            flip_sim.clear()
+
+        self.x_stabalizer_correction_to_detector_flips = np.vstack(detector_flips)
+        self.x_stabilizer_correction_to_measurement_flips = np.vstack(measurement_flips)
+
+        #####################
+        # Z dem corrections #
+        #####################
+        detector_flips = []
+        measurement_flips = []
+        correction_array = self.z_correction_array
+        circuit = self.z_det_circuit
+
+        for pauli_correction, location in correction_array:
+            # Construct circuit with the pauli correction inserted
+            circuit_before_correction = circuit[:location].without_noise()
+            circuit_after_correction = circuit[location+1:].without_noise()
+            flip_circuit = circuit_before_module + circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction + circuit_after_module
+            # Use the flip simulator to find what measurements and detectors are flipped by this correction
+            flip_sim.do(flip_circuit)
+            measurements_flipped = flip_sim.get_measurement_flips().T
+            detectors_flipped = flip_sim.get_detector_flips().T
+            detector_flips.append(detectors_flipped)
+            measurement_flips.append(measurements_flipped)
+            flip_sim.clear()
+
+
+        self.z_dem_correction_to_detector_flips = np.vstack(detector_flips)
+        self.z_dem_correction_to_measurement_flips = np.vstack(measurement_flips)
+        # For matchable dem we need to conver this into one where the faults are edges
+        if self.matchable:
+            self.z_dem_correction_to_detector_flips = (self.z_dem_hyperedge_to_edge @ self.z_dem_correction_to_detector_flips) % 2
+            self.z_dem_correction_to_measurement_flips = (self.z_dem_hyperedge_to_edge @ self.z_dem_correction_to_measurement_flips) % 2
+
+        # self.dem_check_matrix is the check matrix for the dem in that specific module
+        # module.dem_correction_to_detector_flips is how the dem_corrections affect all the detectors in the circuit, even the ones outside this module
+        # To compare them I need to splce module.dem_correction_to_detectors_flips to only include the detectors for this specific module
+        assert (self.z_dem_check_matrix.T == self.z_dem_correction_to_detector_flips[:, previous_detectors:previous_detectors+len(self.z_detectors)]).all()
+
+        ############################
+        # Z stabilizer corrections #
+        ############################
+        detector_flips = []
+        measurement_flips = []
+        # Generate correction map for the Z stabilizer measurements at the end of the circuit
+        for qubit in self.new_support[:self.num_data_qubits]: # The circuit, before change of support, is assumed to have the first set of qubits be the data qubits
+            flip_circuit = circuit_before_module + self.circuit.without_noise() + convert_pauli_to_error(stim.PauliString(f"X{qubit}")) + circuit_after_module
+            flip_sim.do(flip_circuit)
+            measurements_flipped = flip_sim.get_measurement_flips().T
+            detectors_flipped = flip_sim.get_detector_flips().T
+            detector_flips.append(detectors_flipped)
+            measurement_flips.append(measurements_flipped)
+            flip_sim.clear()
+
+        self.z_stabilizer_correction_to_detector_flips = np.vstack(detector_flips)
+        self.z_stabilizer_correction_to_measurement_flips = np.vstack(measurement_flips)
+
+        self.correction_to_measurement_flips = csc_matrix(np.vstack([self.x_dem_correction_to_measurement_flips,
+                                                          self.z_dem_correction_to_measurement_flips,
+                                                          self.x_stabilizer_correction_to_measurement_flips,
+                                                          self.z_stabilizer_correction_to_measurement_flips,
+                                                          ]))
 
 class detector_module():
     def __init__(self,
@@ -483,7 +660,7 @@ class measurement_module():
             flip_sim.clear()
             #print(flip_circuit.diagram())
         self.correction_to_detector_flips = np.vstack(detector_flips)
-        self.correction_to_measurement_flips = np.vstack(measurement_flips)
+        self.correction_to_measurement_flips = csc_matrix(np.vstack(measurement_flips))
 
 def convert_pauli_to_error(pauli_string):
     error_circuit = stim.Circuit()
@@ -594,16 +771,17 @@ class modularised_circuit():
                 module_detectors = detector_flips[:, previous_detectors:previous_detectors+module.num_detectors]
 
                 # Apply the c_func
-                if isinstance(module, detector_module) or isinstance(module, css_detector_module):
+                if isinstance(module, detector_module):
                     corrections = csr_matrix(module.c_func(module_detectors))
-                elif isinstance(module, measurement_module):
+                elif isinstance(module, measurement_module) or isinstance(module, css_detector_module):
                     corrections = csr_matrix(module.c_func(module_measurements))
                 else:
                     print("Unkown module")
                     raise
                 #print(self.measurements_by_module)
                 #print_array_with_partitions(module.correction_to_measurement_flips.astype(int), self.measurements_by_module)
-                measurement_updates = (corrections @ module.correction_to_measurement_flips) % 2
+                # The correction map is stored as a sparse matrix but you need to turn it back to an array to perform the mod 2 addition
+                measurement_updates = (corrections @ module.correction_to_measurement_flips).toarray() % 2
                 measurement_samples = ((measurement_samples + measurement_updates) % 2).astype(bool)
 
                 previous_measurements += module.num_measurements

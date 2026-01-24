@@ -5,6 +5,7 @@ import stim
 from hex_qec.modularisation import logical_measurement_module, detector_module, measurement_module, modularised_circuit, css_detector_module
 from hex_qec.circuit_generation import get_parity_check_matrices, stabilizer_measurement_circuit_both_detectors
 from typing import List, Dict, Tuple, Callable, Any
+import pymatching
 
 def generate_logical_measurement_module(
         physical_error: int,
@@ -106,10 +107,57 @@ def generate_state_prep_module(
     module = css_detector_module(
         circuit,
         decoder_generator,
+        parity_check_tuple,
         x_detectors,
         z_detectors,
         new_support,
         matchable,
+    )
+
+    return module
+
+def generate_state_prep_module_no_noise(
+        code : str,
+        distance : int,
+        pauli : str,
+        new_support : List[int],
+):
+    parity_check_tuple = get_parity_check_matrices(code, distance)
+    syndrome_measurement_rounds = 1
+    circuit = stabilizer_measurement_circuit_both_detectors(
+        parity_check_tuple,
+        pauli,
+        syndrome_measurement_rounds,
+        0,
+    )
+    num_qubits = parity_check_tuple[0].shape[1]
+    num_x_stab = parity_check_tuple[0].shape[0]
+    num_z_stab = parity_check_tuple[1].shape[0]
+
+    def c_func(measurements):
+        x_decoder = pymatching.Matching.from_check_matrix(parity_check_tuple[0])
+        z_decoder = pymatching.Matching.from_check_matrix(parity_check_tuple[1])
+        x_stabilizer_measurements = measurements[:, 0:num_x_stab]
+        z_stabilizer_measurements = measurements[:, num_x_stab:num_x_stab+num_z_stab]
+        z_pauli_corrections = x_decoder.decode_batch(x_stabilizer_measurements)
+        x_pauli_corrections = z_decoder.decode_batch(z_stabilizer_measurements)
+        #print(np.hstack([x_pauli_corrections, z_pauli_corrections]).shape)
+        return np.hstack([x_pauli_corrections, z_pauli_corrections])
+
+    # Create correction array
+    correction_array = []
+    for correction_qubit in range(2*num_qubits):
+        if correction_qubit < num_qubits:
+            correction_array.append((f"X{correction_qubit}", len(circuit)))
+        else:
+            correction_array.append((f"Z{correction_qubit-num_qubits}", len(circuit)))
+    #print(correction_array) 
+
+    module = measurement_module(
+        circuit,
+        c_func,
+        correction_array,
+        new_support,
     )
 
     return module

@@ -101,6 +101,7 @@ def qubit_initialisation(circuit, pauli, block, prob):
     elif pauli.lower() == "x":
         circuit.append("RX", block["data_qubits"])
         circuit.append("Z_ERROR", block["data_qubits"], state_prep_error)
+            
 
 def qubit_measurement(circuit, pauli, block, prob):
     measurement_error = prob
@@ -136,7 +137,7 @@ def measure_X_stabilizers(circuit, x_stabilizers, block, prob):
 
     circuit.append("Z_ERROR", x_ancilla_qubits, ancilla_error)  # Measurement error
     circuit.append("H", x_ancilla_qubits)  # X measurement
-    circuit.append("M", x_ancilla_qubits)
+    circuit.append("MR", x_ancilla_qubits)
 
 def measure_Z_stabilizers(circuit, z_stabilizers, block, prob):
     two_qubit_error = prob
@@ -160,7 +161,7 @@ def measure_Z_stabilizers(circuit, z_stabilizers, block, prob):
 
     circuit.append("Z_ERROR", z_ancilla_qubits, ancilla_error)  # Measurement error
     circuit.append("H", z_ancilla_qubits)  # Z measurement
-    circuit.append("M", z_ancilla_qubits)
+    circuit.append("MR", z_ancilla_qubits)
 
 def transversal_cnot(circuit, first_block, second_block, prob):
     first_block_data_qubits = first_block["data_qubits"]
