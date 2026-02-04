@@ -629,16 +629,22 @@ class measurement_module():
 
         # Update the Pauli corrections
         new_corrections = []
-        pauli_replacements = {f'{original}' : f'{new}' for original, new in enumerate(new_support)}
-        def pauli_replace_func(matched):
-            pauli = matched.group(0)[0]
-            qubit = matched.group(0)[1:]
-            return f"{pauli}{pauli_replacements.get(qubit, qubit)}"
-        pauli_regex_pattern = '|'.join(rf"\w{key}$" for key in pauli_replacements.keys())
-        for correction in self.correction_array:
-            new_corrections.append((re.sub(pauli_regex_pattern, pauli_replace_func, correction[0]), correction[1]))
-        self.correction_array = new_corrections
+        pauli_replacements = {str(i): str(new) for i, new in enumerate(new_support)}
+        # Match one factor like "Z20" that is followed by "*" or end-of-string
+        pauli_pat = re.compile(r'([IXYZ])(\d+)(?=\*|$)')
 
+        def pauli_replace_func(m):
+            pauli = m.group(1)   # 'X', 'Y', 'Z', 'I'
+            qubit = m.group(2)   # digits only, e.g. '20'
+            return pauli + pauli_replacements.get(qubit, qubit)
+
+        for correction in self.correction_array:
+            s = correction[0]
+            new_s = pauli_pat.sub(pauli_replace_func, s)
+            new_corrections.append((new_s, correction[1]))
+
+        self.correction_array = new_corrections
+        
     def generate_measurement_flip_map(self,
                                       circuit_before_module: stim.Circuit,
                                       circuit_after_module: stim.Circuit
