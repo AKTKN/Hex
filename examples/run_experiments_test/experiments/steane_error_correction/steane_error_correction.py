@@ -156,8 +156,8 @@ def steane_error_correction(
     # Steane error correction modules
     modules_for_steane_error_correction = []
     rounds_of_steane_error_correction = repetitions
-    # reset_circuit = stim.Circuit()
-    # reset_circuit.append("R", range(len(second_block_support_with_ancillas)))
+    reset_circuit = stim.Circuit()
+    reset_circuit.append("R", range(len(blocks[1]["data_qubits"]+blocks[1]["x_ancillas"]+blocks[1]["z_ancillas"])))
     for round_number in range(rounds_of_steane_error_correction):
         # Add modules for measuring and correctin the X stabilizers
         # modules_for_steane_error_correction.append(no_measurement_module(zero_state_prep_circuit_noiseless, blocks[2*round_number+1]["data_qubits"]))
@@ -172,11 +172,11 @@ def steane_error_correction(
             distance,
             "z",
             physical_error,
-            blocks[2*round_number+1]["data_qubits"]+blocks[2*round_number+1]["x_ancillas"]+blocks[2*round_number+1]["z_ancillas"],
+            blocks[1]["data_qubits"]+blocks[1]["x_ancillas"]+blocks[1]["z_ancillas"],
             dem_decoder_generator,
             matchable=True,
         ))
-        modules_for_steane_error_correction.append(generate_transversal_cnot_module(physical_error, blocks[2*round_number+1]["data_qubits"], blocks[0]["data_qubits"]))
+        modules_for_steane_error_correction.append(generate_transversal_cnot_module(physical_error, blocks[1]["data_qubits"], blocks[0]["data_qubits"]))
         if include_corrections:
             print("include x")
             x_correction_module = generate_steane_correction_module(
@@ -184,34 +184,34 @@ def steane_error_correction(
                 code,
                 distance,
                 "x",
-                blocks[2*round_number+1]["data_qubits"],
+                blocks[1]["data_qubits"],
                 blocks[0]["data_qubits"],
                 pymatching.Matching.from_check_matrix
             )
             modules_for_steane_error_correction.append(x_correction_module)
-        # # Reset the physical qubits used for the logical ancillas
-        # modules_for_steane_error_correction.append(no_measurement_module(
-        #     reset_circuit,
-        #     blocks[2*round_number+1]["data_qubits"]+blocks[2*round_number+1]["x_ancillas"]+blocks[2*round_number+1]["z_ancillas"],
-        # ))
+        # Reset the physical qubits used for the logical ancillas
+        modules_for_steane_error_correction.append(no_measurement_module(
+            reset_circuit,
+            blocks[1]["data_qubits"]+blocks[1]["x_ancillas"]+blocks[1]["z_ancillas"],
+        ))
         # Add modules for measuring and correctin the Z stabilizers
-        # modules_for_steane_error_correction.append(no_measurement_module(plus_state_prep_circuit_noiseless, blocks[2*round_number+2]["data_qubits"]))
+        # modules_for_steane_error_correction.append(no_measurement_module(plus_state_prep_circuit_noiseless, blocks[1]["data_qubits"]))
         # modules_for_steane_error_correction.append(generate_state_prep_module_no_noise(
         #     code,
         #     distance,
         #     "x",
-        #     blocks[2*round_number+2]["data_qubits"]+blocks[2*round_number+2]["x_ancillas"]+blocks[2*round_number+2]["z_ancillas"],
+        #     blocks[1]["data_qubits"]+blocks[1]["x_ancillas"]+blocks[1]["z_ancillas"],
         # ))
         modules_for_steane_error_correction.append(generate_state_prep_module(
             code,
             distance,
             "x",
             physical_error,
-            blocks[2*round_number+2]["data_qubits"]+blocks[2*round_number+2]["x_ancillas"]+blocks[2*round_number+2]["z_ancillas"],
+            blocks[1]["data_qubits"]+blocks[1]["x_ancillas"]+blocks[1]["z_ancillas"],
             dem_decoder_generator,
             matchable=True,
         ))
-        modules_for_steane_error_correction.append(generate_transversal_cnot_module(physical_error, blocks[0]["data_qubits"], blocks[2*round_number+2]["data_qubits"]))
+        modules_for_steane_error_correction.append(generate_transversal_cnot_module(physical_error, blocks[0]["data_qubits"], blocks[1]["data_qubits"]))
         if include_corrections:
             print("include z")
             modules_for_steane_error_correction.append(generate_steane_correction_module(
@@ -219,15 +219,15 @@ def steane_error_correction(
                 code,
                 distance,
                 "z",
-                blocks[2*round_number+2]["data_qubits"],
+                blocks[1]["data_qubits"],
                 blocks[0]["data_qubits"],
                 pymatching.Matching.from_check_matrix
             ))
-        # # Reset the physical qubits used for the logical ancillas
-        # modules_for_steane_error_correction.append(no_measurement_module(
-        #     reset_circuit,
-        #     blocks[2*round_number+2]["data_qubits"]+blocks[2*round_number+2]["x_ancillas"]+blocks[2*round_number+2]["z_ancillas"],
-        # ))
+        # Reset the physical qubits used for the logical ancillas
+        modules_for_steane_error_correction.append(no_measurement_module(
+            reset_circuit,
+            blocks[1]["data_qubits"]+blocks[1]["x_ancillas"]+blocks[1]["z_ancillas"],
+        ))
 
     measure_data_qubit_x = generate_logical_measurement_module(
         physical_error,
