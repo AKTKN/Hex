@@ -48,9 +48,20 @@ def generate_logical_measurement_module(
 
     # Initialise decoder
     decoder = decoder_generator(pcm)
+    if callable(hasattr(decoder, "decode_batch")):
+        decode_batch = decoder.decode_batch
+    else:
+        def batch_decoder(syndrome_batch):
+            errors = np.zeros(
+                (syndrome_batch.shape[0], pcm.shape[1]), dtype=np.int8
+            )
+            for i in range(0, syndrome_batch.shape[0]):
+                errors[i, :] = decoder.decode(syndrome_batch[i, :])
+            return errors
+        decode_batch = batch_decoder
     def c_func(measurements):
         syndromes = (measurements @ pcm.T) % 2
-        corrections = decoder.decode_batch(syndromes.astype(np.uint8))
+        corrections = decode_batch(syndromes.astype(np.uint8))
         corrected_measurements = (measurements + corrections) % 2
         logical_values = (corrected_measurements @ logicals.T) % 2
         return logical_values
