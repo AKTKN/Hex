@@ -765,7 +765,7 @@ class modularised_circuit():
 
                 # logical measurement
                 logical_measurement = module.c_func(module_measurements)
-                logical_errors += np.all(logical_measurement != module.c_func_expected_output, axis=1).astype(int)
+                logical_errors += np.sum(logical_measurement != module.c_func_expected_output, axis=1)
 
                 previous_measurements += module.num_measurements
                 previous_detectors += module.num_detectors
