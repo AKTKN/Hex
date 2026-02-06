@@ -11,6 +11,8 @@ from scipy.sparse import csc_matrix, csr_matrix
 from typing import List, Dict, Tuple, Callable, Any
 from pprint import pprint
 import re
+import time
+from collections import defaultdict
 
 class logical_measurement_module():
     def __init__(self,
@@ -180,21 +182,55 @@ class css_detector_module():
         correction_array = self.x_correction_array
         circuit = self.x_det_circuit
 
-        for pauli_correction, location in correction_array:
-            # Construct circuit with the pauli correction inserted
-            circuit_before_correction = circuit[:location].without_noise()
-            circuit_after_correction = circuit[location+1:].without_noise()
-            flip_circuit = circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction
-            # Use the flip simulator to find what measurements and detectors are flipped by this correction
-            flip_sim.do(flip_circuit)
-            measurements_flipped = flip_sim.get_measurement_flips().T
-            detectors_flipped = flip_sim.get_detector_flips().T
-            detector_flips.append(detectors_flipped)
-            measurement_flips.append(measurements_flipped)
-            flip_sim.clear()
+        # for pauli_correction, location in correction_array:
+        #     # Construct circuit with the pauli correction inserted
+        #     circuit_before_correction = circuit[:location].without_noise()
+        #     circuit_after_correction = circuit[location+1:].without_noise()
+        #     flip_circuit = circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction
+        #     # Use the flip simulator to find what measurements and detectors are flipped by this correction
+        #     flip_sim.do(flip_circuit)
+        #     measurements_flipped = flip_sim.get_measurement_flips().T
+        #     detectors_flipped = flip_sim.get_detector_flips().T
+        #     detector_flips.append(detectors_flipped)
+        #     measurement_flips.append(measurements_flipped)
+        #     flip_sim.clear()
 
-        self.x_dem_correction_to_local_detector_flips = np.vstack(detector_flips)
-        self.x_dem_correction_to_local_measurement_flips = np.vstack(measurement_flips)
+
+        # New way to generate the measurement flips more efficiently
+        new_flip_start = time.time()
+        num_faults = len(correction_array)
+        corrections_at_location = defaultdict(list)
+        for index, correction in enumerate(correction_array):
+            corrections_at_location[correction[1]].append((index, correction[0]))
+            assert "*" not in correction[0] # for the moment assume the fault are only weight 1 paulis
+        flip_sim_all_faults = stim.FlipSimulator(batch_size=num_faults, disable_stabilizer_randomization=True)
+        for instruction_location, instruction in enumerate(circuit):
+            gate_data = stim.gate_data(instruction.name)
+            if not (gate_data.is_noisy_gate and not gate_data.produces_measurements):
+                flip_sim_all_faults.do(instruction)
+            for index, correction in corrections_at_location[instruction_location]:
+                # print(f"Instruction location: {instruction_location}")
+                # print(f"Index: {index}")
+                pauli = correction[0]
+                qubit = int(correction[1:])
+                # print(f"Pauli: {pauli}, Qubit: {qubit}")
+                flip_sim_all_faults.set_pauli_flip(
+                    pauli,
+                    qubit_index=qubit,
+                    instance_index=index
+                )
+        detector_flips_all = flip_sim_all_faults.get_detector_flips().T
+        measurement_flips_all = flip_sim_all_faults.get_measurement_flips().T
+        self.x_dem_correction_to_local_detector_flips = detector_flips_all
+        self.x_dem_correction_to_local_measurement_flips = measurement_flips_all
+        new_flip_end = time.time()
+        print(f"New flips method: {new_flip_end - new_flip_start}")
+
+        # self.x_dem_correction_to_local_detector_flips = np.vstack(detector_flips)
+        # self.x_dem_correction_to_local_measurement_flips = np.vstack(measurement_flips)
+        # assert np.all(detector_flips_all == self.x_dem_correction_to_local_detector_flips)
+        # assert np.all(measurement_flips_all == self.x_dem_correction_to_local_measurement_flips)
+
         # For matchable dem we need to conver this into one where the faults are edges
         if self.matchable:
             self.x_dem_correction_to_local_detector_flips = (self.x_dem_hyperedge_to_edge @ self.x_dem_correction_to_local_detector_flips) % 2
@@ -208,21 +244,49 @@ class css_detector_module():
         correction_array = self.z_correction_array
         circuit = self.z_det_circuit
 
-        for pauli_correction, location in correction_array:
-            # Construct circuit with the pauli correction inserted
-            circuit_before_correction = circuit[:location].without_noise()
-            circuit_after_correction = circuit[location+1:].without_noise()
-            flip_circuit = circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction
-            # Use the flip simulator to find what measurements and detectors are flipped by this correction
-            flip_sim.do(flip_circuit)
-            measurements_flipped = flip_sim.get_measurement_flips().T
-            detectors_flipped = flip_sim.get_detector_flips().T
-            detector_flips.append(detectors_flipped)
-            measurement_flips.append(measurements_flipped)
-            flip_sim.clear()
+        # for pauli_correction, location in correction_array:
+        #     # Construct circuit with the pauli correction inserted
+        #     circuit_before_correction = circuit[:location].without_noise()
+        #     circuit_after_correction = circuit[location+1:].without_noise()
+        #     flip_circuit = circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction
+        #     # Use the flip simulator to find what measurements and detectors are flipped by this correction
+        #     flip_sim.do(flip_circuit)
+        #     measurements_flipped = flip_sim.get_measurement_flips().T
+        #     detectors_flipped = flip_sim.get_detector_flips().T
+        #     detector_flips.append(detectors_flipped)
+        #     measurement_flips.append(measurements_flipped)
+        #     flip_sim.clear()
 
-        self.z_dem_correction_to_local_detector_flips = np.vstack(detector_flips)
-        self.z_dem_correction_to_local_measurement_flips = np.vstack(measurement_flips)
+        # New way to generate the measurement flips more efficiently
+        new_flip_start = time.time()
+        num_faults = len(correction_array)
+        corrections_at_location = defaultdict(list)
+        for index, correction in enumerate(correction_array):
+            corrections_at_location[correction[1]].append((index, correction[0]))
+            assert "*" not in correction[0] # for the moment assume the fault are only weight 1 paulis
+        flip_sim_all_faults = stim.FlipSimulator(batch_size=num_faults, disable_stabilizer_randomization=True)
+        for instruction_location, instruction in enumerate(circuit):
+            gate_data = stim.gate_data(instruction.name)
+            if not (gate_data.is_noisy_gate and not gate_data.produces_measurements):
+                flip_sim_all_faults.do(instruction)
+            for index, correction in corrections_at_location[instruction_location]:
+                # print(f"Instruction location: {instruction_location}")
+                # print(f"Index: {index}")
+                pauli = correction[0]
+                qubit = int(correction[1:])
+                # print(f"Pauli: {pauli}, Qubit: {qubit}")
+                flip_sim_all_faults.set_pauli_flip(
+                    pauli,
+                    qubit_index=qubit,
+                    instance_index=index
+                )
+        self.z_dem_correction_to_local_detector_flips = flip_sim_all_faults.get_detector_flips().T
+        self.z_dem_correction_to_local_measurement_flips = flip_sim_all_faults.get_measurement_flips().T
+        new_flip_end = time.time()
+        print(f"New flips method: {new_flip_end - new_flip_start}")
+
+        # self.z_dem_correction_to_local_detector_flips = np.vstack(detector_flips)
+        # self.z_dem_correction_to_local_measurement_flips = np.vstack(measurement_flips)
         # For matchable dem we need to conver this into one where the faults are edges
         if self.matchable:
             self.z_dem_correction_to_local_detector_flips = (self.z_dem_hyperedge_to_edge @ self.z_dem_correction_to_local_detector_flips) % 2
@@ -339,26 +403,36 @@ class css_detector_module():
         #####################
         # X dem corrections #
         #####################
-        detector_flips = []
-        measurement_flips = []
         correction_array = self.x_correction_array
         circuit = self.x_det_circuit
 
-        for pauli_correction, location in correction_array:
-            # Construct circuit with the pauli correction inserted
-            circuit_before_correction = circuit[:location].without_noise()
-            circuit_after_correction = circuit[location+1:].without_noise()
-            flip_circuit = circuit_before_module + circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction + circuit_after_module
-            # Use the flip simulator to find what measurements and detectors are flipped by this correction
-            flip_sim.do(flip_circuit)
-            measurements_flipped = flip_sim.get_measurement_flips().T
-            detectors_flipped = flip_sim.get_detector_flips().T
-            detector_flips.append(detectors_flipped)
-            measurement_flips.append(measurements_flipped)
-            flip_sim.clear()
+        # New way to generate the measurement flips more efficiently
+        num_faults = len(correction_array)
+        corrections_at_location = defaultdict(list)
+        for index, correction in enumerate(correction_array):
+            corrections_at_location[correction[1]].append((index, correction[0]))
+            assert "*" not in correction[0] # for the moment assume the fault are only weight 1 paulis
+        flip_sim_all_faults = stim.FlipSimulator(batch_size=num_faults, disable_stabilizer_randomization=True)
+        flip_sim_all_faults.do(circuit_before_module)
+        for instruction_location, instruction in enumerate(circuit):
+            gate_data = stim.gate_data(instruction.name)
+            if not (gate_data.is_noisy_gate and not gate_data.produces_measurements):
+                flip_sim_all_faults.do(instruction)
+            for index, correction in corrections_at_location[instruction_location]:
+                # print(f"Instruction location: {instruction_location}")
+                # print(f"Index: {index}")
+                pauli = correction[0]
+                qubit = int(correction[1:])
+                # print(f"Pauli: {pauli}, Qubit: {qubit}")
+                flip_sim_all_faults.set_pauli_flip(
+                    pauli,
+                    qubit_index=qubit,
+                    instance_index=index
+                )
+        flip_sim_all_faults.do(circuit_after_module)
+        self.x_dem_correction_to_detector_flips = flip_sim_all_faults.get_detector_flips().T
+        self.x_dem_correction_to_measurement_flips = flip_sim_all_faults.get_measurement_flips().T
 
-        self.x_dem_correction_to_detector_flips = np.vstack(detector_flips)
-        self.x_dem_correction_to_measurement_flips = np.vstack(measurement_flips)
         # For matchable dem we need to conver this into one where the faults are edges
         if self.matchable:
             self.x_dem_correction_to_detector_flips = (self.x_dem_hyperedge_to_edge @ self.x_dem_correction_to_detector_flips) % 2
@@ -390,27 +464,36 @@ class css_detector_module():
         #####################
         # Z dem corrections #
         #####################
-        detector_flips = []
-        measurement_flips = []
         correction_array = self.z_correction_array
         circuit = self.z_det_circuit
 
-        for pauli_correction, location in correction_array:
-            # Construct circuit with the pauli correction inserted
-            circuit_before_correction = circuit[:location].without_noise()
-            circuit_after_correction = circuit[location+1:].without_noise()
-            flip_circuit = circuit_before_module + circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction + circuit_after_module
-            # Use the flip simulator to find what measurements and detectors are flipped by this correction
-            flip_sim.do(flip_circuit)
-            measurements_flipped = flip_sim.get_measurement_flips().T
-            detectors_flipped = flip_sim.get_detector_flips().T
-            detector_flips.append(detectors_flipped)
-            measurement_flips.append(measurements_flipped)
-            flip_sim.clear()
+        # New way to generate the measurement flips more efficiently
+        num_faults = len(correction_array)
+        corrections_at_location = defaultdict(list)
+        for index, correction in enumerate(correction_array):
+            corrections_at_location[correction[1]].append((index, correction[0]))
+            assert "*" not in correction[0] # for the moment assume the fault are only weight 1 paulis
+        flip_sim_all_faults = stim.FlipSimulator(batch_size=num_faults, disable_stabilizer_randomization=True)
+        flip_sim_all_faults.do(circuit_before_module)
+        for instruction_location, instruction in enumerate(circuit):
+            gate_data = stim.gate_data(instruction.name)
+            if not (gate_data.is_noisy_gate and not gate_data.produces_measurements):
+                flip_sim_all_faults.do(instruction)
+            for index, correction in corrections_at_location[instruction_location]:
+                # print(f"Instruction location: {instruction_location}")
+                # print(f"Index: {index}")
+                pauli = correction[0]
+                qubit = int(correction[1:])
+                # print(f"Pauli: {pauli}, Qubit: {qubit}")
+                flip_sim_all_faults.set_pauli_flip(
+                    pauli,
+                    qubit_index=qubit,
+                    instance_index=index
+                )
+        flip_sim_all_faults.do(circuit_after_module)
+        self.z_dem_correction_to_detector_flips = flip_sim_all_faults.get_detector_flips().T
+        self.z_dem_correction_to_measurement_flips = flip_sim_all_faults.get_measurement_flips().T
 
-
-        self.z_dem_correction_to_detector_flips = np.vstack(detector_flips)
-        self.z_dem_correction_to_measurement_flips = np.vstack(measurement_flips)
         # For matchable dem we need to conver this into one where the faults are edges
         if self.matchable:
             self.z_dem_correction_to_detector_flips = (self.z_dem_hyperedge_to_edge @ self.z_dem_correction_to_detector_flips) % 2
