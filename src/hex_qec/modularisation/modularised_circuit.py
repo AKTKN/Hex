@@ -167,10 +167,23 @@ class css_detector_module():
             self.z_weights = self.z_dem_priors
 
     def _generate_c_func(self) -> None:
-        self.x_dem_decoder = self.decoder_generator(self.x_dem_check_matrix)
-        self.z_dem_decoder = self.decoder_generator(self.z_dem_check_matrix)
-        self.x_decoder = self.decoder_generator(self.x_pcm)
-        self.z_decoder = self.decoder_generator(self.z_pcm)
+        def get_batch_decode(decoder, pcm):
+            if callable(hasattr(decoder, "decode_batch")):
+                return decoder.decode_batch
+            else:
+                def decode_batch(syndrome_batch):
+                    errors = np.zeros(
+                        (syndrome_batch.shape[0], pcm.shape[1]), dtype=np.int8
+                    )
+                    for i in range(0, syndrome_batch.shape[0]):
+                        errors[i, :] = decoder.decode(syndrome_batch[i, :])
+                    return errors
+                return decode_batch
+
+        self.x_dem_decode_batch = get_batch_decode(self.decoder_generator(self.x_dem_check_matrix), self.x_dem_check_matrix)
+        self.z_dem_decode_batch = get_batch_decode(self.decoder_generator(self.z_dem_check_matrix), self.z_dem_check_matrix)
+        self.x_decode_batch = get_batch_decode(self.decoder_generator(self.x_pcm), self.x_pcm)
+        self.z_decode_batch = get_batch_decode(self.decoder_generator(self.z_pcm), self.z_pcm)
 
         # Calculate correction maps for just the measurements in this module
         flip_sim = stim.FlipSimulator(batch_size=1, disable_stabilizer_randomization=True)
@@ -303,8 +316,8 @@ class css_detector_module():
 
             # x_detector_flips = detector_flips[:, self.x_detectors]
             # z_detector_flips = detector_flips[:, self.z_detectors]
-            corrections_for_x_detectors = self.x_dem_decoder.decode_batch(x_detector_flips)
-            corrections_for_z_detectors = self.z_dem_decoder.decode_batch(z_detector_flips)
+            corrections_for_x_detectors = self.x_dem_decode_batch(x_detector_flips)
+            corrections_for_z_detectors = self.z_dem_decode_batch(z_detector_flips)
 
             # Need to update the measurements using the detector corrections, before correcting the stabilizers
             measurements_corrections_from_x_detectors = (csr_matrix(corrections_for_x_detectors) @ csc_matrix(self.x_dem_correction_to_local_measurement_flips)).toarray() % 2
@@ -315,8 +328,8 @@ class css_detector_module():
             # Assume the circuit is alternating X and Z stabilizer measurements
             last_x_stabilizer_measurements = measurement_samples[:, -(self.num_x_stabilizers + self.num_z_stabilizers):-self.num_z_stabilizers]
             last_z_stabilizer_measurements = measurement_samples[:, -self.num_z_stabilizers:]
-            correction_for_x_stabilizers = self.x_decoder.decode_batch(last_x_stabilizer_measurements)
-            correction_for_z_stabilizers = self.z_decoder.decode_batch(last_z_stabilizer_measurements)
+            correction_for_x_stabilizers = self.x_decode_batch(last_x_stabilizer_measurements)
+            correction_for_z_stabilizers = self.z_decode_batch(last_z_stabilizer_measurements)
             # print_array_with_partitions(measurement_samples.astype(int), [0, 4, 8, 12, 16, 20])
             # print(last_x_stabilizer_measurements.astype(int))
             # print(correction_for_x_stabilizers)
