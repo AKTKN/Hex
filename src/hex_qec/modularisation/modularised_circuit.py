@@ -846,59 +846,68 @@ class modularised_circuit():
     def simulate(self,
                  num_shots: int
                  ) -> int:
-        # Sample
+
         m2d_converter = self.circuit.compile_m2d_converter()
         measurement_sampler = self.circuit.compile_sampler()
-        measurement_samples = measurement_sampler.sample(shots=num_shots)
-        
-        # Iterate over the modules and perform their corrections
-        previous_measurements = 0
-        previous_detectors = 0
-        logical_errors = np.zeros((num_shots), dtype=int)
-        for module in self.circuit_modules:
-            if isinstance(module, logical_measurement_module):
-                module_measurements = measurement_samples[:, previous_measurements:previous_measurements+module.num_measurements]
 
-                # logical measurement
-                logical_measurement = module.c_func(module_measurements)
-                logical_errors += np.sum(logical_measurement != module.c_func_expected_output, axis=1)
+        # Perform the sampling in batches
+        total_logical_errors = 0
+        SHOTS_PER_BATCH = 256
+        batch_number = 0
+        while (total_logical_errors < 512) and (SHOTS_PER_BATCH*batch_number < num_shots):
+            # Sample
+            measurement_samples = measurement_sampler.sample(shots=SHOTS_PER_BATCH)
 
-                previous_measurements += module.num_measurements
-                previous_detectors += module.num_detectors
+            # Iterate over the modules and perform their corrections
+            previous_measurements = 0
+            previous_detectors = 0
+            logical_errors = np.zeros((SHOTS_PER_BATCH), dtype=int)
+            for module in self.circuit_modules:
+                if isinstance(module, logical_measurement_module):
+                    module_measurements = measurement_samples[:, previous_measurements:previous_measurements+module.num_measurements]
 
-            elif isinstance(module, measurement_module) or isinstance(module, detector_module) or isinstance(module, css_detector_module):
-                module_measurements = measurement_samples[:, previous_measurements:previous_measurements+module.num_measurements]
-                # Detectors need to be recalculated for each modules because the measurements are being updated
-                detector_flips, observable_values = m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
-                module_detectors = detector_flips[:, previous_detectors:previous_detectors+module.num_detectors]
+                    # logical measurement
+                    logical_measurement = module.c_func(module_measurements)
+                    logical_errors += np.sum(logical_measurement != module.c_func_expected_output, axis=1)
 
-                # Apply the c_func
-                if isinstance(module, detector_module):
-                    corrections = csr_matrix(module.c_func(module_detectors))
-                elif isinstance(module, measurement_module) or isinstance(module, css_detector_module):
-                    corrections = csr_matrix(module.c_func(module_measurements))
-                else:
-                    print("Unkown module")
-                    raise
-                #print(self.measurements_by_module)
-                #print_array_with_partitions(module.correction_to_measurement_flips.astype(int), self.measurements_by_module)
-                # The correction map is stored as a sparse matrix but you need to turn it back to an array to perform the mod 2 addition
-                measurement_updates = (corrections @ module.correction_to_measurement_flips).toarray() % 2
-                measurement_samples = ((measurement_samples + measurement_updates) % 2).astype(bool)
+                    previous_measurements += module.num_measurements
+                    previous_detectors += module.num_detectors
 
-                previous_measurements += module.num_measurements
-                previous_detectors += module.num_detectors
+                elif isinstance(module, measurement_module) or isinstance(module, detector_module) or isinstance(module, css_detector_module):
+                    module_measurements = measurement_samples[:, previous_measurements:previous_measurements+module.num_measurements]
+                    # Detectors need to be recalculated for each modules because the measurements are being updated
+                    detector_flips, observable_values = m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
+                    module_detectors = detector_flips[:, previous_detectors:previous_detectors+module.num_detectors]
+
+                    # Apply the c_func
+                    if isinstance(module, detector_module):
+                        corrections = csr_matrix(module.c_func(module_detectors))
+                    elif isinstance(module, measurement_module) or isinstance(module, css_detector_module):
+                        corrections = csr_matrix(module.c_func(module_measurements))
+                    else:
+                        print("Unkown module")
+                        raise
+                    #print(self.measurements_by_module)
+                    #print_array_with_partitions(module.correction_to_measurement_flips.astype(int), self.measurements_by_module)
+                    # The correction map is stored as a sparse matrix but you need to turn it back to an array to perform the mod 2 addition
+                    measurement_updates = (corrections @ module.correction_to_measurement_flips).toarray() % 2
+                    measurement_samples = ((measurement_samples + measurement_updates) % 2).astype(bool)
+
+                    previous_measurements += module.num_measurements
+                    previous_detectors += module.num_detectors
 
 
-        # Once all the corrections have been applied, none of the detectors should be flipped
-        # A decoder that doesn't converge might not satisfy this criterion but I still want it flagged here
-        detector_flips, observable_values = m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
-        assert np.sum(detector_flips) == 0
+            # Once all the corrections have been applied, none of the detectors should be flipped
+            # A decoder that doesn't converge might not satisfy this criterion but I still want it flagged here
+            detector_flips, observable_values = m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
+            assert np.sum(detector_flips) == 0
 
-        # 1 or more logical measurements having the wrong values in a given sample means that that samples had a logical error
-        logical_errors[logical_errors > 0] = 1
+            # 1 or more logical measurements having the wrong values in a given sample means that that samples had a logical error
+            logical_errors[logical_errors > 0] = 1
+            total_logical_errors += np.sum(logical_errors)
+            batch_number += 1
 
-        return np.sum(logical_errors)
+        return batch_number*SHOTS_PER_BATCH, total_logical_errors
 
 def print_array_with_partitions(arr, partition_cols):
     """
