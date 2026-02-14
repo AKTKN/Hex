@@ -6,6 +6,8 @@ from hex_qec.modularisation import logical_measurement_module, detector_module, 
 from hex_qec.circuit_generation import get_parity_check_matrices, stabilizer_measurement_circuit_both_detectors
 from typing import List, Dict, Tuple, Callable, Any
 import pymatching
+import time
+import copy
 
 def generate_logical_measurement_module(
         physical_error: int,
@@ -75,23 +77,26 @@ def generate_logical_measurement_module(
 
     return module
 
-def generate_state_prep_module(
+# Generate many of the same state preparation procedure, with different support
+def generate_state_prep_modules(
         code : str,
         distance : int,
         pauli : str,
         physical_error,
-        new_support : List[int],
+        supports: List[List[int]],
         decoder_generator: Callable[[ndarray], Callable[[ndarray], ndarray]],
         matchable : bool,
 ):
     parity_check_tuple = get_parity_check_matrices(code, distance)
     syndrome_measurement_rounds = distance
+    start_circuit_gen = time.time()
     circuit = stabilizer_measurement_circuit_both_detectors(
         parity_check_tuple,
         pauli,
         syndrome_measurement_rounds,
         physical_error,
     )
+    print(f"#Circuit Gen Time: {time.time() - start_circuit_gen}")
     num_x_stab = parity_check_tuple[0].shape[0]
     num_z_stab = parity_check_tuple[1].shape[0]
 
@@ -115,17 +120,26 @@ def generate_state_prep_module(
             z_detectors.extend(range(detector_count, detector_count + num_z_stab))
             detector_count += num_z_stab
 
-    module = css_detector_module(
+    start_module = time.time()
+    template_module = css_detector_module(
         circuit,
         decoder_generator,
         parity_check_tuple,
         x_detectors,
         z_detectors,
-        new_support,
-        matchable,
+        matchable=matchable,
     )
+    print(f"#Create Template : {time.time() - start_module}")
+    change_module_support = time.time()
+    modules = []
+    for support in supports:
+        new_module = copy.deepcopy(template_module)
+        new_module.set_support(support)
+        modules.append(new_module)
+        print(f"#Change support : {time.time() - change_module_support}")
+    print(f"#Module creation : {time.time() - change_module_support}")
 
-    return module
+    return modules
 
 def generate_state_prep_module_no_noise(
         code : str,

@@ -328,19 +328,6 @@ def stabilizer_measurement_circuit_both_detectors(
         for stab_num in range(num_z_stabilizers):
             circ.append("DETECTOR", [stim.target_rec(-(2*num_z_stabilizers + num_x_stabilizers) + stab_num), stim.target_rec(-num_z_stabilizers + stab_num)])
 
-
-    # # Noisy physical qubit measurement
-    # qubit_measurement(circ, pauli, block, prob)
-
-    # if not disable_final_detectors:
-    #     # Form detectors between directly measured qubits and the previous stabilizer measurements
-    #     for stab_num in range(num_stabilizers):
-    #         circ.append("DETECTOR", [stim.target_rec(-n - num_stabilizers + stab_num)] + [stim.target_rec(-n + i) for i in z_pcm.col[z_pcm.row == stab_num]])
-
-    #     circ.append("OBSERVABLE_INCLUDE", [stim.target_rec(-n + i) for i in z_logical_binary.nonzero()[1]], 0)
-
-    # debug and print(f"Number of detectors: {circ.num_detectors} = {circ.num_detectors / num_stabilizers} * {num_stabilizers}(number of stabilizers)")
-
     return circ
 
 def noiseless_unitary_state_prep(

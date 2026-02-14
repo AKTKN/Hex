@@ -1,3 +1,4 @@
+import sys
 import stim
 import pymatching
 from stimbposd import detector_error_model_to_check_matrices
@@ -13,6 +14,24 @@ from pprint import pprint
 import re
 import time
 from collections import defaultdict
+
+# Helper funtion for multiplying sparse binary matrices
+def gf2_matmul_csc(A: csc_matrix, B: csc_matrix) -> csc_matrix:
+    # Ensure CSC
+    A = A.tocsc()
+    B = B.tocsc()
+
+    # Multiply in integer arithmetic (counts overlaps)
+    C = (A @ B).tocsc()
+
+    # Reduce counts mod 2
+    C.data = (C.data & 1).astype(np.int8)   # bitwise mod 2, faster than % 2
+
+    # Drop zeros created by mod
+    C.eliminate_zeros()
+
+    # Ensure stored values are 1s (already true after &1)
+    return C
 
 class logical_measurement_module():
     def __init__(self,
@@ -68,7 +87,7 @@ class css_detector_module():
                  parity_check_tuple : Tuple[ndarray],
                  x_detectors : List[int],
                  z_detectors : List[int],
-                 new_support : List[int],
+                 new_support : List[int] = [],
                  matchable : bool = True,
                  ) -> None:
         self.circuit = circuit
@@ -79,7 +98,6 @@ class css_detector_module():
         self.parity_check_tuple = parity_check_tuple
         self.x_detectors = x_detectors
         self.z_detectors = z_detectors
-        self.new_support = new_support
 
         self.x_pcm = self.parity_check_tuple[0]
         self.z_pcm = self.parity_check_tuple[1]
@@ -107,10 +125,11 @@ class css_detector_module():
         self.x_det_filter_function = x_det_filter_function
         self.z_det_filter_function = z_det_filter_function
 
-        self._change_support(new_support)
         self._generate_dem()
-        self._generate_correction_array()
         self._generate_c_func()
+
+        if len(new_support) > 0:
+            self.set_support(new_support)
 
     def _generate_dem(self):
         # Build seperate circuits with the x and z detectors
@@ -185,6 +204,28 @@ class css_detector_module():
         self.x_decode_batch = get_batch_decode(self.decoder_generator(self.x_pcm), self.x_pcm)
         self.z_decode_batch = get_batch_decode(self.decoder_generator(self.z_pcm), self.z_pcm)
 
+
+        # Generate correction arrays using the template circuit, as the eventual support with not affect the c_func
+        x_correction_array = []
+        z_correction_array = []
+        for pauli_dem, circuit in [(self.x_dem, self.x_det_circuit), (self.z_dem, self.z_det_circuit)]:
+            circuit_explain_errors = circuit.explain_detector_error_model_errors(
+                dem_filter = pauli_dem,
+                reduce_to_one_representative_error=True,
+            )
+            for explained_error in circuit_explain_errors:
+                # Get location of fault
+                error_location = explained_error.circuit_error_locations[0]
+                stack_frame = error_location.stack_frames[0]
+                instruction_offset = stack_frame.instruction_offset
+                # Get Pauli of fault
+                pauli_fault = self._get_pauli_product_from_error_location(error_location, circuit.num_qubits)
+                if pauli_dem == self.x_dem:
+                    x_correction_array.append((pauli_fault, instruction_offset))
+                else:
+                    z_correction_array.append((pauli_fault, instruction_offset))
+
+
         # Calculate correction maps for just the measurements in this module
         flip_sim = stim.FlipSimulator(batch_size=1, disable_stabilizer_randomization=True)
         #####################
@@ -192,26 +233,14 @@ class css_detector_module():
         #####################
         detector_flips = []
         measurement_flips = []
-        correction_array = self.x_correction_array
+        correction_array = x_correction_array
         circuit = self.x_det_circuit
-
-        # for pauli_correction, location in correction_array:
-        #     # Construct circuit with the pauli correction inserted
-        #     circuit_before_correction = circuit[:location].without_noise()
-        #     circuit_after_correction = circuit[location+1:].without_noise()
-        #     flip_circuit = circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction
-        #     # Use the flip simulator to find what measurements and detectors are flipped by this correction
-        #     flip_sim.do(flip_circuit)
-        #     measurements_flipped = flip_sim.get_measurement_flips().T
-        #     detectors_flipped = flip_sim.get_detector_flips().T
-        #     detector_flips.append(detectors_flipped)
-        #     measurement_flips.append(measurements_flipped)
-        #     flip_sim.clear()
 
 
         # New way to generate the measurement flips more efficiently
         new_flip_start = time.time()
         num_faults = len(correction_array)
+        print(f"##Number of faults for X detectors: {num_faults}")
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
@@ -232,47 +261,28 @@ class css_detector_module():
                     qubit_index=qubit,
                     instance_index=index
                 )
-        detector_flips_all = flip_sim_all_faults.get_detector_flips().T
-        measurement_flips_all = flip_sim_all_faults.get_measurement_flips().T
-        self.x_dem_correction_to_local_detector_flips = detector_flips_all
-        self.x_dem_correction_to_local_measurement_flips = measurement_flips_all
+        self.x_dem_correction_to_local_detector_flips = csc_matrix(flip_sim_all_faults.get_detector_flips().T)
+        self.x_dem_correction_to_local_measurement_flips = csc_matrix(flip_sim_all_faults.get_measurement_flips().T)
         new_flip_end = time.time()
-        print(f"New flips method: {new_flip_end - new_flip_start}")
-
-        # self.x_dem_correction_to_local_detector_flips = np.vstack(detector_flips)
-        # self.x_dem_correction_to_local_measurement_flips = np.vstack(measurement_flips)
-        # assert np.all(detector_flips_all == self.x_dem_correction_to_local_detector_flips)
-        # assert np.all(measurement_flips_all == self.x_dem_correction_to_local_measurement_flips)
+        print(f"##New flips method: {new_flip_end - new_flip_start}")
 
         # For matchable dem we need to conver this into one where the faults are edges
         if self.matchable:
-            self.x_dem_correction_to_local_detector_flips = (self.x_dem_hyperedge_to_edge @ self.x_dem_correction_to_local_detector_flips) % 2
-            self.x_dem_correction_to_local_measurement_flips = (self.x_dem_hyperedge_to_edge @ self.x_dem_correction_to_local_measurement_flips) % 2
+            self.x_dem_correction_to_local_detector_flips = gf2_matmul_csc(self.x_dem_hyperedge_to_edge, self.x_dem_correction_to_local_detector_flips)
+            self.x_dem_correction_to_local_measurement_flips = gf2_matmul_csc(self.x_dem_hyperedge_to_edge, self.x_dem_correction_to_local_measurement_flips)
 
         #####################
         # Z dem corrections #
         #####################
         detector_flips = []
         measurement_flips = []
-        correction_array = self.z_correction_array
+        correction_array = z_correction_array
         circuit = self.z_det_circuit
-
-        # for pauli_correction, location in correction_array:
-        #     # Construct circuit with the pauli correction inserted
-        #     circuit_before_correction = circuit[:location].without_noise()
-        #     circuit_after_correction = circuit[location+1:].without_noise()
-        #     flip_circuit = circuit_before_correction + convert_pauli_to_error(stim.PauliString(pauli_correction)) + circuit_after_correction
-        #     # Use the flip simulator to find what measurements and detectors are flipped by this correction
-        #     flip_sim.do(flip_circuit)
-        #     measurements_flipped = flip_sim.get_measurement_flips().T
-        #     detectors_flipped = flip_sim.get_detector_flips().T
-        #     detector_flips.append(detectors_flipped)
-        #     measurement_flips.append(measurements_flipped)
-        #     flip_sim.clear()
 
         # New way to generate the measurement flips more efficiently
         new_flip_start = time.time()
         num_faults = len(correction_array)
+        print(f"##Number of faults for Z detectors: {num_faults}")
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
@@ -293,17 +303,22 @@ class css_detector_module():
                     qubit_index=qubit,
                     instance_index=index
                 )
-        self.z_dem_correction_to_local_detector_flips = flip_sim_all_faults.get_detector_flips().T
-        self.z_dem_correction_to_local_measurement_flips = flip_sim_all_faults.get_measurement_flips().T
+        self.z_dem_correction_to_local_detector_flips = csc_matrix(flip_sim_all_faults.get_detector_flips().T)
+        self.z_dem_correction_to_local_measurement_flips = csc_matrix(flip_sim_all_faults.get_measurement_flips().T)
         new_flip_end = time.time()
-        print(f"New flips method: {new_flip_end - new_flip_start}")
+        print(f"##New flips method: {new_flip_end - new_flip_start}")
+
+        print(f"##z_dem_correction_to_local_detector_flips : {self.z_dem_correction_to_local_detector_flips.shape}")
+        print(f"##z_dem_correction_to_local_measurement_flips : {self.z_dem_correction_to_local_measurement_flips.shape}")
+        print(f"##z_dem_correction_to_local_detector_flips : {sys.getsizeof(self.z_dem_correction_to_local_detector_flips)}")
+        print(f"##z_dem_correction_to_local_measurement_flips : {sys.getsizeof(self.z_dem_correction_to_local_measurement_flips)}")
 
         # self.z_dem_correction_to_local_detector_flips = np.vstack(detector_flips)
         # self.z_dem_correction_to_local_measurement_flips = np.vstack(measurement_flips)
         # For matchable dem we need to conver this into one where the faults are edges
         if self.matchable:
-            self.z_dem_correction_to_local_detector_flips = (self.z_dem_hyperedge_to_edge @ self.z_dem_correction_to_local_detector_flips) % 2
-            self.z_dem_correction_to_local_measurement_flips = (self.z_dem_hyperedge_to_edge @ self.z_dem_correction_to_local_measurement_flips) % 2
+            self.z_dem_correction_to_local_detector_flips = gf2_matmul_csc(self.z_dem_hyperedge_to_edge, self.z_dem_correction_to_local_detector_flips)
+            self.z_dem_correction_to_local_measurement_flips = gf2_matmul_csc(self.z_dem_hyperedge_to_edge, self.z_dem_correction_to_local_measurement_flips)
 
         def c_func(measurement_samples: ndarray
                    ) -> ndarray:
@@ -320,8 +335,8 @@ class css_detector_module():
             corrections_for_z_detectors = self.z_dem_decode_batch(z_detector_flips)
 
             # Need to update the measurements using the detector corrections, before correcting the stabilizers
-            measurements_corrections_from_x_detectors = (csr_matrix(corrections_for_x_detectors) @ csc_matrix(self.x_dem_correction_to_local_measurement_flips)).toarray() % 2
-            measurements_corrections_from_z_detectors = (csr_matrix(corrections_for_z_detectors) @ csc_matrix(self.z_dem_correction_to_local_measurement_flips)).toarray() % 2
+            measurements_corrections_from_x_detectors = (csr_matrix(corrections_for_x_detectors) @ self.x_dem_correction_to_local_measurement_flips).toarray() % 2
+            measurements_corrections_from_z_detectors = (csr_matrix(corrections_for_z_detectors) @ self.z_dem_correction_to_local_measurement_flips).toarray() % 2
             measurement_samples = (measurement_samples + measurements_corrections_from_x_detectors) % 2
             measurement_samples = (measurement_samples + measurements_corrections_from_z_detectors) % 2
 
@@ -357,6 +372,7 @@ class css_detector_module():
         return "*".join(paulis) 
 
     def _generate_correction_array(self):
+        start_time = time.time()
         self.x_correction_array = []
         self.z_correction_array = []
         for pauli_dem, circuit in [(self.x_dem, self.x_det_circuit), (self.z_dem, self.z_det_circuit)]:
@@ -375,8 +391,9 @@ class css_detector_module():
                     self.x_correction_array.append((pauli_fault, instruction_offset))
                 else:
                     self.z_correction_array.append((pauli_fault, instruction_offset))
+        print(f"##Correction array : {time.time() - start_time}")
 
-    def _change_support(self,
+    def set_support(self,
                        new_support: List[int],
                        ) -> None:
         # Update the circuit
@@ -391,8 +408,14 @@ class css_detector_module():
             
         circuit_regex_pattern = '|'.join(rf"{key}\b" for key in circuit_replacements.keys())
         new_circuit_text = re.sub(circuit_regex_pattern, circuit_replace_func, str(self.circuit))
+        new_x_det_circuit_text = re.sub(circuit_regex_pattern, circuit_replace_func, str(self.x_det_circuit))
+        new_z_det_circuit_text = re.sub(circuit_regex_pattern, circuit_replace_func, str(self.z_det_circuit))
 
         self.circuit = stim.Circuit(new_circuit_text)
+        self.x_det_circuit = stim.Circuit(new_x_det_circuit_text)
+        self.z_det_circuit = stim.Circuit(new_z_det_circuit_text)
+
+        self.new_support = new_support
 
         # # Update the Pauli corrections
         # new_corrections = []
@@ -405,6 +428,8 @@ class css_detector_module():
         # for correction in self.correction_array:
         #     new_corrections.append((re.sub(pauli_regex_pattern, pauli_replace_func, correction[0]), correction[1]))
         # self.correction_array = new_corrections
+
+        self._generate_correction_array()
 
     def generate_measurement_flip_map(self,
                                       circuit_before_module: stim.Circuit,
@@ -421,6 +446,7 @@ class css_detector_module():
 
         # New way to generate the measurement flips more efficiently
         num_faults = len(correction_array)
+        print(f"Number of faults: {num_faults}")
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
@@ -443,18 +469,19 @@ class css_detector_module():
                     instance_index=index
                 )
         flip_sim_all_faults.do(circuit_after_module)
-        self.x_dem_correction_to_detector_flips = flip_sim_all_faults.get_detector_flips().T
-        self.x_dem_correction_to_measurement_flips = flip_sim_all_faults.get_measurement_flips().T
+        self.x_dem_correction_to_detector_flips = csc_matrix(flip_sim_all_faults.get_detector_flips().T)
+        self.x_dem_correction_to_measurement_flips = csc_matrix(flip_sim_all_faults.get_measurement_flips().T)
 
         # For matchable dem we need to conver this into one where the faults are edges
         if self.matchable:
-            self.x_dem_correction_to_detector_flips = (self.x_dem_hyperedge_to_edge @ self.x_dem_correction_to_detector_flips) % 2
-            self.x_dem_correction_to_measurement_flips = (self.x_dem_hyperedge_to_edge @ self.x_dem_correction_to_measurement_flips) % 2
+            self.x_dem_correction_to_detector_flips = gf2_matmul_csc(self.x_dem_hyperedge_to_edge, self.x_dem_correction_to_detector_flips)
+            self.x_dem_correction_to_measurement_flips = gf2_matmul_csc(self.x_dem_hyperedge_to_edge, self.x_dem_correction_to_measurement_flips)
 
         # self.dem_check_matrix is the check matrix for the dem in that specific module
         # module.dem_correction_to_detector_flips is how the dem_corrections affect all the detectors in the circuit, even the ones outside this module
         # To compare them I need to splce module.dem_correction_to_detectors_flips to only include the detectors for this specific module
-        assert (self.x_dem_check_matrix.T == self.x_dem_correction_to_detector_flips[:, previous_detectors:previous_detectors+len(self.x_detectors)]).all()
+        # assert (self.x_dem_check_matrix.T == self.x_dem_correction_to_detector_flips[:, previous_detectors:previous_detectors+len(self.x_detectors)]).all()
+        assert (csc_matrix(self.x_dem_check_matrix.T) != self.x_dem_correction_to_detector_flips[:, previous_detectors:previous_detectors+len(self.x_detectors)]).nnz == 0
 
         ############################
         # X stabilizer corrections #
@@ -471,8 +498,8 @@ class css_detector_module():
             measurement_flips.append(measurements_flipped)
             flip_sim.clear()
 
-        self.x_stabalizer_correction_to_detector_flips = np.vstack(detector_flips)
-        self.x_stabilizer_correction_to_measurement_flips = np.vstack(measurement_flips)
+        self.x_stabalizer_correction_to_detector_flips = csc_matrix(np.vstack(detector_flips))
+        self.x_stabilizer_correction_to_measurement_flips = csc_matrix(np.vstack(measurement_flips))
 
         #####################
         # Z dem corrections #
@@ -482,6 +509,7 @@ class css_detector_module():
 
         # New way to generate the measurement flips more efficiently
         num_faults = len(correction_array)
+        print(f"Number of faults: {num_faults}")
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
@@ -504,18 +532,18 @@ class css_detector_module():
                     instance_index=index
                 )
         flip_sim_all_faults.do(circuit_after_module)
-        self.z_dem_correction_to_detector_flips = flip_sim_all_faults.get_detector_flips().T
-        self.z_dem_correction_to_measurement_flips = flip_sim_all_faults.get_measurement_flips().T
+        self.z_dem_correction_to_detector_flips = csc_matrix(flip_sim_all_faults.get_detector_flips().T)
+        self.z_dem_correction_to_measurement_flips = csc_matrix(flip_sim_all_faults.get_measurement_flips().T)
 
         # For matchable dem we need to conver this into one where the faults are edges
         if self.matchable:
-            self.z_dem_correction_to_detector_flips = (self.z_dem_hyperedge_to_edge @ self.z_dem_correction_to_detector_flips) % 2
-            self.z_dem_correction_to_measurement_flips = (self.z_dem_hyperedge_to_edge @ self.z_dem_correction_to_measurement_flips) % 2
+            self.z_dem_correction_to_detector_flips = gf2_matmul_csc(self.z_dem_hyperedge_to_edge, self.z_dem_correction_to_detector_flips)
+            self.z_dem_correction_to_measurement_flips = gf2_matmul_csc(self.z_dem_hyperedge_to_edge, self.z_dem_correction_to_measurement_flips)
 
         # self.dem_check_matrix is the check matrix for the dem in that specific module
         # module.dem_correction_to_detector_flips is how the dem_corrections affect all the detectors in the circuit, even the ones outside this module
         # To compare them I need to splce module.dem_correction_to_detectors_flips to only include the detectors for this specific module
-        assert (self.z_dem_check_matrix.T == self.z_dem_correction_to_detector_flips[:, previous_detectors:previous_detectors+len(self.z_detectors)]).all()
+        assert (csc_matrix(self.z_dem_check_matrix.T) != self.z_dem_correction_to_detector_flips[:, previous_detectors:previous_detectors+len(self.z_detectors)]).nnz == 0
 
         ############################
         # Z stabilizer corrections #
@@ -532,14 +560,15 @@ class css_detector_module():
             measurement_flips.append(measurements_flipped)
             flip_sim.clear()
 
-        self.z_stabilizer_correction_to_detector_flips = np.vstack(detector_flips)
-        self.z_stabilizer_correction_to_measurement_flips = np.vstack(measurement_flips)
+        self.z_stabilizer_correction_to_detector_flips = csc_matrix(np.vstack(detector_flips))
+        self.z_stabilizer_correction_to_measurement_flips = csc_matrix(np.vstack(measurement_flips))
 
-        self.correction_to_measurement_flips = csc_matrix(np.vstack([self.x_dem_correction_to_measurement_flips,
-                                                          self.z_dem_correction_to_measurement_flips,
-                                                          self.x_stabilizer_correction_to_measurement_flips,
-                                                          self.z_stabilizer_correction_to_measurement_flips,
-                                                          ]))
+        stacked_matrices = scipy.sparse.vstack([self.x_dem_correction_to_measurement_flips,
+                                                self.z_dem_correction_to_measurement_flips,
+                                                self.x_stabilizer_correction_to_measurement_flips,
+                                                self.z_stabilizer_correction_to_measurement_flips,
+                                                ])
+        self.correction_to_measurement_flips = stacked_matrices
 
 class detector_module():
     def __init__(self,
