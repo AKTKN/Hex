@@ -187,20 +187,24 @@ class css_detector_module():
 
     def _generate_c_func(self) -> None:
         def get_batch_decode(decoder, pcm):
-            if callable(hasattr(decoder, "decode_batch")):
-                return decoder.decode_batch
+            if hasattr(decoder, "decode_batch") and callable(decoder.decode_batch):
+                return lambda syndromes: decoder.decode_batch(syndromes.astype(np.uint8))
             else:
                 def decode_batch(syndrome_batch):
                     errors = np.zeros(
-                        (syndrome_batch.shape[0], pcm.shape[1]), dtype=np.int8
+                        (syndrome_batch.shape[0], pcm.shape[1]), dtype=np.uint8
                     )
                     for i in range(0, syndrome_batch.shape[0]):
-                        errors[i, :] = decoder.decode(syndrome_batch[i, :])
+                        errors[i, :] = decoder.decode(syndrome_batch[i, :].astype(np.uint8))
                     return errors
                 return decode_batch
 
-        self.x_dem_decode_batch = get_batch_decode(self.decoder_generator(self.x_dem_check_matrix), self.x_dem_check_matrix)
-        self.z_dem_decode_batch = get_batch_decode(self.decoder_generator(self.z_dem_check_matrix), self.z_dem_check_matrix)
+        self.x_dem_decode_batch = get_batch_decode(self.decoder_generator(self.x_dem_check_matrix, weights=self.x_weights), self.x_dem_check_matrix)
+        self.z_dem_decode_batch = get_batch_decode(self.decoder_generator(self.z_dem_check_matrix, weights=self.z_weights), self.z_dem_check_matrix)
+        # These decoders are used move the state back into the all zero syndromes code space.
+        # Using a decoder for this may be overkill and just performing the destabilizer corrections may be sufficient.
+        # Additionally if the decoder you are using doesn't always perform the destabilizer correction
+        # (e.g. in the case of belief propagation not converging) then this will likely be problematic
         self.x_decode_batch = get_batch_decode(self.decoder_generator(self.x_pcm), self.x_pcm)
         self.z_decode_batch = get_batch_decode(self.decoder_generator(self.z_pcm), self.z_pcm)
 
