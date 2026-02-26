@@ -139,6 +139,50 @@ def measure_X_stabilizers(circuit, x_stabilizers, block, prob):
     circuit.append("H", x_ancilla_qubits)  # X measurement
     circuit.append("MR", x_ancilla_qubits)
 
+def measure_X_stabilizers_surface_code(circuit, x_stabilizers, block, prob):
+    print("measure_X_stabilizers_surface_code!!!!")
+    two_qubit_error = prob
+    ancilla_error = prob
+    data_qubits = block["data_qubits"]
+    x_ancilla_qubits = block["x_ancillas"]
+    # Prepare the ancillas
+    circuit.append("R", x_ancilla_qubits)  # |+> State prep
+    circuit.append("H", x_ancilla_qubits)
+    circuit.append("Z_ERROR", x_ancilla_qubits, ancilla_error)  # State preparation error
+    # Iterate over stabilizers and measure them using the corresponding ancilla
+
+    for ancilla_index, ancilla in enumerate(x_ancilla_qubits):
+        stabilizer = x_stabilizers[ancilla_index]
+        stabilizer_qubit_locations = []
+        for q_ind, q_loc in enumerate(data_qubits):
+            if stabilizer[q_ind] == 1:
+                stabilizer_qubit_locations.append(q_loc)
+        # Check if the stabilizer is weight 2 or 4
+        weight = len(stabilizer_qubit_locations)
+        if weight == 2:
+            # For the boundary checks the order doesn't matter
+            circuit.append("CX", [ancilla, stabilizer_qubit_locations[0]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[0]], two_qubit_error)
+            circuit.append("CX", [ancilla, stabilizer_qubit_locations[1]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[1]], two_qubit_error)
+        elif weight == 4:
+            # For the plaquet the order matters. For X checks we will keep the same order as the stabilizer
+            circuit.append("CX", [ancilla, stabilizer_qubit_locations[0]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[0]], two_qubit_error)
+            circuit.append("CX", [ancilla, stabilizer_qubit_locations[1]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[1]], two_qubit_error)
+            circuit.append("CX", [ancilla, stabilizer_qubit_locations[2]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[2]], two_qubit_error)
+            circuit.append("CX", [ancilla, stabilizer_qubit_locations[3]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[3]], two_qubit_error)
+        else:
+            raise("Stabilizer wrong weight!")
+
+    circuit.append("Z_ERROR", x_ancilla_qubits, ancilla_error)  # Measurement error
+    circuit.append("H", x_ancilla_qubits)  # X measurement
+    circuit.append("MR", x_ancilla_qubits)
+
+
 def measure_Z_stabilizers(circuit, z_stabilizers, block, prob):
     two_qubit_error = prob
     ancilla_error = prob
@@ -159,6 +203,48 @@ def measure_Z_stabilizers(circuit, z_stabilizers, block, prob):
                 circuit.append("CZ", [ancilla, q_loc])
                 circuit.append("DEPOLARIZE2", [ancilla, q_loc], two_qubit_error)
 
+    circuit.append("Z_ERROR", z_ancilla_qubits, ancilla_error)  # Measurement error
+    circuit.append("H", z_ancilla_qubits)  # Z measurement
+    circuit.append("MR", z_ancilla_qubits)
+
+def measure_Z_stabilizers_surface_code(circuit, z_stabilizers, block, prob):
+    print("measure_Z_stabilizers_surface_code!!!!")
+    two_qubit_error = prob
+    ancilla_error = prob
+    data_qubits = block["data_qubits"]
+    z_ancilla_qubits = block["z_ancillas"]
+    # Prepare the ancillas
+    circuit.append("R", z_ancilla_qubits)  # |+> State prep
+    circuit.append("H", z_ancilla_qubits)
+    circuit.append("Z_ERROR", z_ancilla_qubits, ancilla_error)  # State preparation error
+    # Iterate over stabilizers and measure them using the corresponding ancilla
+
+    for ancilla_index, ancilla in enumerate(z_ancilla_qubits):
+        stabilizer = z_stabilizers[ancilla_index]
+        stabilizer_qubit_locations = []
+        for q_ind, q_loc in enumerate(data_qubits):
+            if stabilizer[q_ind] == 3:
+                stabilizer_qubit_locations.append(q_loc)
+        # Check if the stabilizer is weight 2 or 4
+        weight = len(stabilizer_qubit_locations)
+        if weight == 2:
+            # For the boundary checks the order doesn't matter
+            circuit.append("CZ", [ancilla, stabilizer_qubit_locations[0]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[0]], two_qubit_error)
+            circuit.append("CZ", [ancilla, stabilizer_qubit_locations[1]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[1]], two_qubit_error)
+        elif weight == 4:
+            # For the plaquet the order matters. For Z checks we will swap the order of the middle two CZ's
+            circuit.append("CZ", [ancilla, stabilizer_qubit_locations[0]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[0]], two_qubit_error)
+            circuit.append("CZ", [ancilla, stabilizer_qubit_locations[2]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[2]], two_qubit_error)
+            circuit.append("CZ", [ancilla, stabilizer_qubit_locations[1]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[1]], two_qubit_error)
+            circuit.append("CZ", [ancilla, stabilizer_qubit_locations[3]])
+            circuit.append("DEPOLARIZE2", [ancilla, stabilizer_qubit_locations[3]], two_qubit_error)
+        else:
+            raise("Stabilizer wrong weight!")
     circuit.append("Z_ERROR", z_ancilla_qubits, ancilla_error)  # Measurement error
     circuit.append("H", z_ancilla_qubits)  # Z measurement
     circuit.append("MR", z_ancilla_qubits)
@@ -220,10 +306,12 @@ def stabilizer_measurement_circuit(
         syndrome_repetitions,
         prob,
         disable_final_detectors=True,
-        debug=False
+        debug=False,
+        surface_code=False
 ):
     block_template, stabilizer_tuple, logical_0_prep_template, logical_plus_prep_template = create_stabilizers_and_block_template(*parity_check_tuple)
     x_stabilizers, z_stabilizers, x_logicals, z_logicals = stabilizer_tuple
+    (x_pcm, z_pcm, x_logical_binary, z_logical_binary) = parity_check_tuple
     blocks = generate_blocks(1, block_template)
     block = blocks[0]
     circ = stim.Circuit()
@@ -241,8 +329,12 @@ def stabilizer_measurement_circuit(
     qubit_initialisation(circ, pauli, block, prob)
 
     # First found of stabilizer measurement
-    measure_X_stabilizers(circ, x_stabilizers, block, prob)
-    measure_Z_stabilizers(circ, z_stabilizers, block, prob)
+    if surface_code:
+        measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob)
+        measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob)
+    else:
+        measure_X_stabilizers(circ, x_stabilizers, block, prob)
+        measure_Z_stabilizers(circ, z_stabilizers, block, prob)
 
     # Initial detectors
     if pauli.lower() == "x":
@@ -255,8 +347,12 @@ def stabilizer_measurement_circuit(
             circ.append("DETECTOR", [stim.target_rec(-num_z_stabilizers + stab_num)])
 
     for syndrome_repetition in range(2, syndrome_repetitions+1):
-        measure_X_stabilizers(circ, x_stabilizers, block, prob)
-        measure_Z_stabilizers(circ, z_stabilizers, block, prob)
+        if surface_code:
+            measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob)
+            measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob)
+        else:
+            measure_X_stabilizers(circ, x_stabilizers, block, prob)
+            measure_Z_stabilizers(circ, z_stabilizers, block, prob)
         # Add detectors
         if pauli.lower() == "x":
             for stab_num in range(num_x_stabilizers):
@@ -266,17 +362,26 @@ def stabilizer_measurement_circuit(
                 circ.append("DETECTOR", [stim.target_rec(-(2*num_z_stabilizers + num_x_stabilizers) + stab_num), stim.target_rec(-num_z_stabilizers + stab_num)])
 
 
-    # # Noisy physical qubit measurement
-    # qubit_measurement(circ, pauli, block, prob)
+    # Noisy physical qubit measurement
+    qubit_measurement(circ, pauli, block, prob)
 
-    # if not disable_final_detectors:
-    #     # Form detectors between directly measured qubits and the previous stabilizer measurements
-    #     for stab_num in range(num_stabilizers):
-    #         circ.append("DETECTOR", [stim.target_rec(-n - num_stabilizers + stab_num)] + [stim.target_rec(-n + i) for i in z_pcm.col[z_pcm.row == stab_num]])
+    if not disable_final_detectors:
+        if pauli.lower() == "x":
+            # Form detectors between directly measured qubits and the previous stabilizer measurements
+            for stab_num in range(num_x_stabilizers):
+                circ.append("DETECTOR", [stim.target_rec(-n - num_x_stabilizers + stab_num)] + [stim.target_rec(-n + i) for i in x_pcm.col[x_pcm.row == stab_num]])
 
-    #     circ.append("OBSERVABLE_INCLUDE", [stim.target_rec(-n + i) for i in z_logical_binary.nonzero()[1]], 0)
+            circ.append("OBSERVABLE_INCLUDE", [stim.target_rec(-n + i) for i in x_logical_binary.nonzero()[1]], 0)
 
-    # debug and print(f"Number of detectors: {circ.num_detectors} = {circ.num_detectors / num_stabilizers} * {num_stabilizers}(number of stabilizers)")
+            debug and print(f"Number of detectors: {circ.num_detectors} = {circ.num_detectors / num_z_stabilizers} * {num_z_stabilizers}(number of stabilizers)")
+        elif pauli.lower() == "z":
+            # Form detectors between directly measured qubits and the previous stabilizer measurements
+            for stab_num in range(num_z_stabilizers):
+                circ.append("DETECTOR", [stim.target_rec(-n - num_z_stabilizers + stab_num)] + [stim.target_rec(-n + i) for i in z_pcm.col[z_pcm.row == stab_num]])
+
+            circ.append("OBSERVABLE_INCLUDE", [stim.target_rec(-n + i) for i in z_logical_binary.nonzero()[1]], 0)
+
+            debug and print(f"Number of detectors: {circ.num_detectors} = {circ.num_detectors / num_z_stabilizers} * {num_z_stabilizers}(number of stabilizers)")
 
     return circ
 
@@ -288,7 +393,8 @@ def stabilizer_measurement_circuit_both_detectors(
         syndrome_repetitions,
         prob,
         disable_final_detectors=True,
-        debug=False
+        debug=False,
+        surface_code=False
 ):
     block_template, stabilizer_tuple, logical_0_prep_template, logical_plus_prep_template = create_stabilizers_and_block_template(*parity_check_tuple)
     x_stabilizers, z_stabilizers, x_logicals, z_logicals = stabilizer_tuple
@@ -304,8 +410,12 @@ def stabilizer_measurement_circuit_both_detectors(
     qubit_initialisation(circ, pauli, block, prob)
 
     # First found of stabilizer measurement
-    measure_X_stabilizers(circ, x_stabilizers, block, prob)
-    measure_Z_stabilizers(circ, z_stabilizers, block, prob)
+    if surface_code:
+        measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob)
+        measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob)
+    else:
+        measure_X_stabilizers(circ, x_stabilizers, block, prob)
+        measure_Z_stabilizers(circ, z_stabilizers, block, prob)
 
     # Initial detectors
     if pauli.lower() == "x":
@@ -318,8 +428,12 @@ def stabilizer_measurement_circuit_both_detectors(
             circ.append("DETECTOR", [stim.target_rec(-num_z_stabilizers + stab_num)])
 
     for syndrome_repetition in range(2, syndrome_repetitions+1):
-        measure_X_stabilizers(circ, x_stabilizers, block, prob)
-        measure_Z_stabilizers(circ, z_stabilizers, block, prob)
+        if surface_code:
+            measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob)
+            measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob)
+        else:
+            measure_X_stabilizers(circ, x_stabilizers, block, prob)
+            measure_Z_stabilizers(circ, z_stabilizers, block, prob)
         # Add detectors
         # if pauli.lower() == "x":
         for stab_num in range(num_x_stabilizers):

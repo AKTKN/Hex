@@ -86,6 +86,7 @@ def generate_state_prep_modules(
         supports: List[List[int]],
         decoder_generator: Callable[[ndarray], Callable[[ndarray], ndarray]],
         matchable : bool,
+        surface_code : bool = False,
 ):
     parity_check_tuple = get_parity_check_matrices(code, distance)
     syndrome_measurement_rounds = distance
@@ -95,6 +96,7 @@ def generate_state_prep_modules(
         pauli,
         syndrome_measurement_rounds,
         physical_error,
+        surface_code = surface_code,
     )
     print(f"#Circuit Gen Time: {time.time() - start_circuit_gen}")
     num_x_stab = parity_check_tuple[0].shape[0]
