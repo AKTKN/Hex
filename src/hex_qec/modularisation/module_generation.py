@@ -50,7 +50,7 @@ def generate_logical_measurement_module(
 
     # Initialise decoder
     decoder = decoder_generator(pcm)
-    if callable(hasattr(decoder, "decode_batch")):
+    if hasattr(decoder, "decode_batch") and callable(decoder.decode_batch):
         decode_batch = decoder.decode_batch
     else:
         def batch_decoder(syndrome_batch):

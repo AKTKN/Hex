@@ -14,6 +14,7 @@ from pprint import pprint
 import re
 import time
 from collections import defaultdict
+import json
 
 # Helper funtion for multiplying sparse binary matrices
 def gf2_matmul_csc(A: csc_matrix, B: csc_matrix) -> csc_matrix:
@@ -877,7 +878,8 @@ class modularised_circuit():
             self.measurements_by_module.append(previous_measurements)
 
     def simulate(self,
-                 num_shots: int
+                 num_shots: int,
+                 results_path: str = ""
                  ) -> int:
 
         m2d_converter = self.circuit.compile_m2d_converter()
@@ -939,6 +941,18 @@ class modularised_circuit():
             logical_errors[logical_errors > 0] = 1
             total_logical_errors += np.sum(logical_errors)
             batch_number += 1
+
+            if len(results_path) > 0:
+                samples_performed = batch_number*SHOTS_PER_BATCH
+                logical_error_rate = total_logical_errors / samples_performed
+                results = {
+                    "samples_performed" : samples_performed, 
+                    "logical_errors" : int(total_logical_errors),
+                    "logical_error_rate" : logical_error_rate
+                }
+                with open(results_path, "w") as f:
+                    json.dump(results, f, indent=2)
+                    
 
         return batch_number*SHOTS_PER_BATCH, total_logical_errors
 
