@@ -15,6 +15,11 @@ import re
 import time
 from collections import defaultdict
 import json
+import logging
+
+# Just get a logger - don't configure it!
+logger = logging.getLogger(__name__)
+
 
 # Helper funtion for multiplying sparse binary matrices
 def gf2_matmul_csc(A: csc_matrix, B: csc_matrix) -> csc_matrix:
@@ -245,7 +250,7 @@ class css_detector_module():
         # New way to generate the measurement flips more efficiently
         new_flip_start = time.time()
         num_faults = len(correction_array)
-        print(f"##Number of faults for X detectors: {num_faults}")
+        logger.info(f"##Number of faults for X detectors: {num_faults}")
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
@@ -269,7 +274,7 @@ class css_detector_module():
         self.x_dem_correction_to_local_detector_flips = csc_matrix(flip_sim_all_faults.get_detector_flips().T)
         self.x_dem_correction_to_local_measurement_flips = csc_matrix(flip_sim_all_faults.get_measurement_flips().T)
         new_flip_end = time.time()
-        print(f"##New flips method: {new_flip_end - new_flip_start}")
+        logger.info(f"##New flips method: {new_flip_end - new_flip_start}")
 
         # For matchable dem we need to conver this into one where the faults are edges
         if self.matchable:
@@ -287,7 +292,7 @@ class css_detector_module():
         # New way to generate the measurement flips more efficiently
         new_flip_start = time.time()
         num_faults = len(correction_array)
-        print(f"##Number of faults for Z detectors: {num_faults}")
+        logger.info(f"##Number of faults for Z detectors: {num_faults}")
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
@@ -298,11 +303,11 @@ class css_detector_module():
             if not (gate_data.is_noisy_gate and not gate_data.produces_measurements):
                 flip_sim_all_faults.do(instruction)
             for index, correction in corrections_at_location[instruction_location]:
-                # print(f"Instruction location: {instruction_location}")
-                # print(f"Index: {index}")
+                # logger.info(f"Instruction location: {instruction_location}")
+                # logger.info(f"Index: {index}")
                 pauli = correction[0]
                 qubit = int(correction[1:])
-                # print(f"Pauli: {pauli}, Qubit: {qubit}")
+                # logger.info(f"Pauli: {pauli}, Qubit: {qubit}")
                 flip_sim_all_faults.set_pauli_flip(
                     pauli,
                     qubit_index=qubit,
@@ -311,12 +316,12 @@ class css_detector_module():
         self.z_dem_correction_to_local_detector_flips = csc_matrix(flip_sim_all_faults.get_detector_flips().T)
         self.z_dem_correction_to_local_measurement_flips = csc_matrix(flip_sim_all_faults.get_measurement_flips().T)
         new_flip_end = time.time()
-        print(f"##New flips method: {new_flip_end - new_flip_start}")
+        logger.info(f"##New flips method: {new_flip_end - new_flip_start}")
 
-        print(f"##z_dem_correction_to_local_detector_flips : {self.z_dem_correction_to_local_detector_flips.shape}")
-        print(f"##z_dem_correction_to_local_measurement_flips : {self.z_dem_correction_to_local_measurement_flips.shape}")
-        print(f"##z_dem_correction_to_local_detector_flips : {sys.getsizeof(self.z_dem_correction_to_local_detector_flips)}")
-        print(f"##z_dem_correction_to_local_measurement_flips : {sys.getsizeof(self.z_dem_correction_to_local_measurement_flips)}")
+        logger.info(f"##z_dem_correction_to_local_detector_flips : {self.z_dem_correction_to_local_detector_flips.shape}")
+        logger.info(f"##z_dem_correction_to_local_measurement_flips : {self.z_dem_correction_to_local_measurement_flips.shape}")
+        logger.info(f"##z_dem_correction_to_local_detector_flips : {sys.getsizeof(self.z_dem_correction_to_local_detector_flips)}")
+        logger.info(f"##z_dem_correction_to_local_measurement_flips : {sys.getsizeof(self.z_dem_correction_to_local_measurement_flips)}")
 
         # self.z_dem_correction_to_local_detector_flips = np.vstack(detector_flips)
         # self.z_dem_correction_to_local_measurement_flips = np.vstack(measurement_flips)
@@ -350,11 +355,11 @@ class css_detector_module():
             last_z_stabilizer_measurements = measurement_samples[:, -self.num_z_stabilizers:]
             correction_for_x_stabilizers = self.x_decode_batch(last_x_stabilizer_measurements)
             correction_for_z_stabilizers = self.z_decode_batch(last_z_stabilizer_measurements)
-            # print_array_with_partitions(measurement_samples.astype(int), [0, 4, 8, 12, 16, 20])
-            # print(last_x_stabilizer_measurements.astype(int))
-            # print(correction_for_x_stabilizers)
-            # print(last_z_stabilizer_measurements.astype(int))
-            # print(correction_for_z_stabilizers)
+            # logger.info_array_with_partitions(measurement_samples.astype(int), [0, 4, 8, 12, 16, 20])
+            # logger.info(last_x_stabilizer_measurements.astype(int))
+            # logger.info(correction_for_x_stabilizers)
+            # logger.info(last_z_stabilizer_measurements.astype(int))
+            # logger.info(correction_for_z_stabilizers)
 
             combined_corrections = np.hstack([corrections_for_x_detectors, corrections_for_z_detectors, correction_for_x_stabilizers, correction_for_z_stabilizers])
             return combined_corrections
@@ -396,7 +401,7 @@ class css_detector_module():
                     self.x_correction_array.append((pauli_fault, instruction_offset))
                 else:
                     self.z_correction_array.append((pauli_fault, instruction_offset))
-        print(f"##Correction array : {time.time() - start_time}")
+        logger.info(f"##Correction array : {time.time() - start_time}")
 
     def set_support(self,
                        new_support: List[int],
@@ -405,7 +410,7 @@ class css_detector_module():
         if len(new_support) == 0:
             new_support = list(range(self.circuit.num_qubits))
         elif len(new_support) != self.circuit.num_qubits:
-            print("Module support not the correct size")
+            logger.info("Module support not the correct size")
             raise
         circuit_replacements = {f" {original}" : f" {new}" for original, new in enumerate(new_support)}
         def circuit_replace_func(matched):
@@ -451,7 +456,7 @@ class css_detector_module():
 
         # New way to generate the measurement flips more efficiently
         num_faults = len(correction_array)
-        print(f"Number of faults: {num_faults}")
+        logger.info(f"Number of faults: {num_faults}")
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
@@ -463,11 +468,11 @@ class css_detector_module():
             if not (gate_data.is_noisy_gate and not gate_data.produces_measurements):
                 flip_sim_all_faults.do(instruction)
             for index, correction in corrections_at_location[instruction_location]:
-                # print(f"Instruction location: {instruction_location}")
-                # print(f"Index: {index}")
+                # logger.info(f"Instruction location: {instruction_location}")
+                # logger.info(f"Index: {index}")
                 pauli = correction[0]
                 qubit = int(correction[1:])
-                # print(f"Pauli: {pauli}, Qubit: {qubit}")
+                # logger.info(f"Pauli: {pauli}, Qubit: {qubit}")
                 flip_sim_all_faults.set_pauli_flip(
                     pauli,
                     qubit_index=qubit,
@@ -514,7 +519,7 @@ class css_detector_module():
 
         # New way to generate the measurement flips more efficiently
         num_faults = len(correction_array)
-        print(f"Number of faults: {num_faults}")
+        logger.info(f"Number of faults: {num_faults}")
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
@@ -526,11 +531,11 @@ class css_detector_module():
             if not (gate_data.is_noisy_gate and not gate_data.produces_measurements):
                 flip_sim_all_faults.do(instruction)
             for index, correction in corrections_at_location[instruction_location]:
-                # print(f"Instruction location: {instruction_location}")
-                # print(f"Index: {index}")
+                # logger.info(f"Instruction location: {instruction_location}")
+                # logger.info(f"Index: {index}")
                 pauli = correction[0]
                 qubit = int(correction[1:])
-                # print(f"Pauli: {pauli}, Qubit: {qubit}")
+                # logger.info(f"Pauli: {pauli}, Qubit: {qubit}")
                 flip_sim_all_faults.set_pauli_flip(
                     pauli,
                     qubit_index=qubit,
@@ -890,6 +895,7 @@ class modularised_circuit():
         SHOTS_PER_BATCH = 256
         batch_number = 0
         while (total_logical_errors < 512) and (SHOTS_PER_BATCH*batch_number < num_shots):
+            logger.info(f"Batch number: {batch_number}")
             # Sample
             measurement_samples = measurement_sampler.sample(shots=SHOTS_PER_BATCH)
 
@@ -920,10 +926,10 @@ class modularised_circuit():
                     elif isinstance(module, measurement_module) or isinstance(module, css_detector_module):
                         corrections = csr_matrix(module.c_func(module_measurements))
                     else:
-                        print("Unkown module")
+                        logger.info("Unkown module")
                         raise
-                    #print(self.measurements_by_module)
-                    #print_array_with_partitions(module.correction_to_measurement_flips.astype(int), self.measurements_by_module)
+                    #logger.info(self.measurements_by_module)
+                    #logger.info_array_with_partitions(module.correction_to_measurement_flips.astype(int), self.measurements_by_module)
                     # The correction map is stored as a sparse matrix but you need to turn it back to an array to perform the mod 2 addition
                     measurement_updates = (corrections @ module.correction_to_measurement_flips).toarray() % 2
                     measurement_samples = ((measurement_samples + measurement_updates) % 2).astype(bool)
@@ -941,6 +947,7 @@ class modularised_circuit():
             logical_errors[logical_errors > 0] = 1
             total_logical_errors += np.sum(logical_errors)
             batch_number += 1
+            logger.info(f"Logical errors: {np.sum(logical_errors)}")
 
             if len(results_path) > 0:
                 samples_performed = batch_number*SHOTS_PER_BATCH
@@ -950,6 +957,7 @@ class modularised_circuit():
                     "logical_errors" : int(total_logical_errors),
                     "logical_error_rate" : logical_error_rate
                 }
+                logger.info("Saving results.json")
                 with open(results_path, "w") as f:
                     json.dump(results, f, indent=2)
                     

@@ -8,6 +8,10 @@ from typing import List, Dict, Tuple, Callable, Any
 import pymatching
 import time
 import copy
+import logging
+
+# Just get a logger - don't configure it!
+logger = logging.getLogger(__name__)
 
 def generate_logical_measurement_module(
         physical_error: int,
@@ -98,7 +102,7 @@ def generate_state_prep_modules(
         physical_error,
         surface_code = surface_code,
     )
-    print(f"#Circuit Gen Time: {time.time() - start_circuit_gen}")
+    logger.info(f"#Circuit Gen Time: {time.time() - start_circuit_gen}")
     num_x_stab = parity_check_tuple[0].shape[0]
     num_z_stab = parity_check_tuple[1].shape[0]
 
@@ -131,15 +135,15 @@ def generate_state_prep_modules(
         z_detectors,
         matchable=matchable,
     )
-    print(f"#Create Template : {time.time() - start_module}")
+    logger.info(f"#Create Template : {time.time() - start_module}")
     change_module_support = time.time()
     modules = []
     for support in supports:
         new_module = copy.deepcopy(template_module)
         new_module.set_support(support)
         modules.append(new_module)
-        print(f"#Change support : {time.time() - change_module_support}")
-    print(f"#Module creation : {time.time() - change_module_support}")
+        logger.info(f"#Change support : {time.time() - change_module_support}")
+    logger.info(f"#Module creation : {time.time() - change_module_support}")
 
     return modules
 
