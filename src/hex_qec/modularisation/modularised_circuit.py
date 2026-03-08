@@ -803,6 +803,53 @@ class measurement_module():
         self.correction_to_detector_flips = np.vstack(detector_flips)
         self.correction_to_measurement_flips = csc_matrix(np.vstack(measurement_flips))
 
+
+class only_postselection_module():
+    # c_func should work on a batch of inputs
+    def __init__(self,
+                 circuit: stim.Circuit,
+                 c_func: Callable[[ndarray], ndarray],
+                 new_support: List[int] = None
+                 ) -> None:
+        self.circuit = circuit
+        self.num_measurements = circuit.num_measurements
+        self.num_detectors = circuit.num_detectors
+        self.c_func = c_func
+        self.support_set = False
+        # Check that the input and output dimensions of c_func work
+
+        self._change_support(new_support)
+
+    def _change_support(self,
+                       new_support: List[int],
+                       ) -> None:
+        # Update the circuit
+        if len(new_support) == 0:
+            new_support = range(self.circuit.num_qubits)
+        elif len(new_support) != self.circuit.num_qubits:
+            print("Module support not the correct size")
+            raise
+
+        circuit_replacements = {f" {original}" : f" {new}" for original, new in enumerate(new_support)}
+        def circuit_replace_func(matched):
+            return circuit_replacements.get(matched.group(0), matched.group(0))
+            
+        circuit_regex_pattern = '|'.join(rf"{key}\b" for key in circuit_replacements.keys())
+        new_circuit_text = re.sub(circuit_regex_pattern, circuit_replace_func, str(self.circuit))
+
+        self.circuit = stim.Circuit(new_circuit_text)
+
+        # Update the Pauli corrections
+        new_corrections = []
+        pauli_replacements = {str(i): str(new) for i, new in enumerate(new_support)}
+        # Match one factor like "Z20" that is followed by "*" or end-of-string
+        pauli_pat = re.compile(r'([IXYZ])(\d+)(?=\*|$)')
+
+        def pauli_replace_func(m):
+            pauli = m.group(1)   # 'X', 'Y', 'Z', 'I'
+            qubit = m.group(2)   # digits only, e.g. '20'
+            return pauli + pauli_replacements.get(qubit, qubit)
+
 def convert_pauli_to_error(pauli_string):
     error_circuit = stim.Circuit()
     for location, pauli in enumerate(pauli_string):
@@ -892,9 +939,12 @@ class modularised_circuit():
 
         # Perform the sampling in batches
         total_logical_errors = 0
+        total_logical_errors_postselected = 0
+        samples_performed = 0
+        samples_performed_postselected = 0
         SHOTS_PER_BATCH = 256
         batch_number = 0
-        while (total_logical_errors < 512) and (SHOTS_PER_BATCH*batch_number < num_shots):
+        while (total_logical_errors_postselected < 512) and (SHOTS_PER_BATCH*batch_number < num_shots):
             logger.info(f"Batch number: {batch_number}")
             # Sample
             measurement_samples = measurement_sampler.sample(shots=SHOTS_PER_BATCH)
@@ -903,6 +953,7 @@ class modularised_circuit():
             previous_measurements = 0
             previous_detectors = 0
             logical_errors = np.zeros((SHOTS_PER_BATCH), dtype=int)
+            shots_postselected = np.zeros((SHOTS_PER_BATCH), dtype=int)
             for module in self.circuit_modules:
                 if isinstance(module, logical_measurement_module):
                     module_measurements = measurement_samples[:, previous_measurements:previous_measurements+module.num_measurements]
@@ -922,9 +973,23 @@ class modularised_circuit():
 
                     # Apply the c_func
                     if isinstance(module, detector_module):
-                        corrections = csr_matrix(module.c_func(module_detectors))
+                        c_func_output = module.c_func(module_detectors)
+                        # Allow backwards compatability for c_funcs don't return a post_selection value
+                        if isinstance(c_func_output, tuple):
+                            corrections, module_postselection = c_func_output
+                            correciton = csc_matrix(corrections)
+                        else:
+                            corrections = csc_matrix(c_func_output)
+                            mode_postselection = np.zeros((SHOTS_PER_BATCH), dtype=int)
                     elif isinstance(module, measurement_module) or isinstance(module, css_detector_module):
-                        corrections = csr_matrix(module.c_func(module_measurements))
+                        c_func_output = module.c_func(module_measurements)
+                        # Allow backwards compatability for c_funcs don't return a post_selection value
+                        if isinstance(c_func_output, tuple):
+                            corrections, module_postselection = c_func_output
+                            correciton = csc_matrix(corrections)
+                        else:
+                            corrections = csc_matrix(c_func_output)
+                            module_postselection = np.zeros((SHOTS_PER_BATCH), dtype=int)
                     else:
                         logger.info("Unkown module")
                         raise
@@ -937,7 +1002,17 @@ class modularised_circuit():
                     previous_measurements += module.num_measurements
                     previous_detectors += module.num_detectors
 
+                    shots_postselected = (shots_postselected + module_postselection) % 2
+                elif isinstance(module, only_postselection_module):
+                    module_measurements = measurement_samples[:, previous_measurements:previous_measurements+module.num_measurements]
 
+                    c_func_output = module.c_func(module_measurements)
+                    module_postselection = c_func_output
+
+                    previous_measurements += module.num_measurements
+                    previous_detectors += module.num_detectors
+
+                    shots_postselected = (shots_postselected + module_postselection) % 2
             # Once all the corrections have been applied, none of the detectors should be flipped
             # A decoder that doesn't converge might not satisfy this criterion but I still want it flagged here
             detector_flips, observable_values = m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
@@ -945,24 +1020,32 @@ class modularised_circuit():
 
             # 1 or more logical measurements having the wrong values in a given sample means that that samples had a logical error
             logical_errors[logical_errors > 0] = 1
-            total_logical_errors += np.sum(logical_errors)
+            total_logical_errors += np.sum(logical_errors, dtype=int)
+            # print(((1 - shots_postselected) * logical_errors))
+            total_logical_errors_postselected += np.sum(((1 - shots_postselected) * logical_errors), dtype=int)
+
+            samples_performed += SHOTS_PER_BATCH
+            samples_performed_postselected += np.sum((1 - shots_postselected), dtype=int)
+
             batch_number += 1
-            logger.info(f"Logical errors: {np.sum(logical_errors)}")
+
+            logger.info(f"Logical errors: {np.sum(logical_errors, dtype=int)}")
 
             if len(results_path) > 0:
-                samples_performed = batch_number*SHOTS_PER_BATCH
                 logical_error_rate = total_logical_errors / samples_performed
                 results = {
-                    "samples_performed" : samples_performed, 
+                    "samples_performed" : int(samples_performed), 
                     "logical_errors" : int(total_logical_errors),
-                    "logical_error_rate" : logical_error_rate
+                    "logical_error_rate" : logical_error_rate,
+                    "logical_errors_postselected" : int(total_logical_errors_postselected),
+                    "samples_performed_postselected" : int(samples_performed_postselected), 
                 }
                 logger.info("Saving results.json")
                 with open(results_path, "w") as f:
                     json.dump(results, f, indent=2)
                     
 
-        return batch_number*SHOTS_PER_BATCH, total_logical_errors
+        return samples_performed, total_logical_errors
 
 def print_array_with_partitions(arr, partition_cols):
     """
