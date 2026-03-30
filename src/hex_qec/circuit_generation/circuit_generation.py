@@ -2,6 +2,8 @@ import stim
 import glob
 from pathlib import Path
 from scipy.io import mmread, mmwrite
+from typing import List, Dict, Tuple, Callable, Any
+from numpy import ndarray
 
 
 ############################################
@@ -445,13 +447,11 @@ def stabilizer_measurement_circuit_both_detectors(
     return circ
 
 def noiseless_unitary_state_prep(
-        code: str,
-        distance: int,
+        parity_check_tuple: Tuple[ndarray],
         pauli: str,
         eigenvalue: int,
 ) -> stim.Circuit:
 
-    parity_check_tuple = get_parity_check_matrices(code, distance)
     block_template, stabilizer_tuple, logical_0_prep_template, logical_plus_prep_template = create_stabilizers_and_block_template(*parity_check_tuple)
     x_stabilizers, z_stabilizers, x_logicals, z_logicals = stabilizer_tuple
     blocks = generate_blocks(1, block_template)

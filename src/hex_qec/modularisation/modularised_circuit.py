@@ -930,7 +930,8 @@ class modularised_circuit():
             self.measurements_by_module.append(previous_measurements)
 
     def simulate(self,
-                 num_shots: int,
+                 max_shots: int,
+                 max_errors_before_halting: int,
                  results_path: str = ""
                  ) -> int:
 
@@ -944,7 +945,7 @@ class modularised_circuit():
         samples_performed_postselected = 0
         SHOTS_PER_BATCH = 256
         batch_number = 0
-        while (total_logical_errors_postselected < 512) and (SHOTS_PER_BATCH*batch_number < num_shots):
+        while (total_logical_errors_postselected < max_errors_before_halting) and (SHOTS_PER_BATCH*batch_number < max_shots):
             logger.info(f"Batch number: {batch_number}")
             # Sample
             measurement_samples = measurement_sampler.sample(shots=SHOTS_PER_BATCH)
