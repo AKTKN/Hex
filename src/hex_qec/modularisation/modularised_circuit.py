@@ -1,6 +1,5 @@
 import sys
 import stim
-import pymatching
 from stimbposd import detector_error_model_to_check_matrices
 import numpy as np
 np.set_printoptions(linewidth=200)

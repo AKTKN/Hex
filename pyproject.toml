@@ -5,3 +5,11 @@
   [project]
   name = "hex-qec"
   version = "0.1.0"
+
+  dependencies = [
+      "numpy>=1.26",
+      "scipy>=1.11",
+      "stim>=1.13",
+      "stimbposd",
+      "pymatching>2.0",
+  ]
