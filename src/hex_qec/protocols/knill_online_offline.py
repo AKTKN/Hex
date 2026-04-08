@@ -23,6 +23,7 @@ def knill_online_offline(
         syndrome_measurement_rounds,
         online_decoder_generator,
         offline_decoder_generator,
+        matchable_offline_decoding,
         physical_error,
         max_shots,
         max_errors_before_halting,
@@ -52,7 +53,7 @@ def knill_online_offline(
             physical_error,
             [blocks[2*teleportation_index+1]["data_qubits"]+blocks[2*teleportation_index+1]["x_ancillas"]+blocks[2*teleportation_index+1]["z_ancillas"] for teleportation_index in range(num_teleportations)],
             offline_decoder_generator,
-            matchable=True,
+            matchable=matchable_offline_decoding,
     )
     plus_state_prep_modules = generate_state_prep_modules(
             parity_check_tuple,
@@ -61,7 +62,7 @@ def knill_online_offline(
             physical_error,
             [blocks[2*teleportation_index+2]["data_qubits"]+blocks[2*teleportation_index+2]["x_ancillas"]+blocks[2*teleportation_index+2]["z_ancillas"] for teleportation_index in range(num_teleportations)],
             offline_decoder_generator,
-            matchable=True,
+            matchable=matchable_offline_decoding,
     )
     for teleportation_index in range(num_teleportations):
         # Prepare logical Bell state
