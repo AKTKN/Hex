@@ -24,6 +24,36 @@ For development:
 pip install -e .
 ```
 
+I built this package to make is easier to run numerical experiments: [`https://github.com/ewanmurphy/Experiments`](https://github.com/ewanmurphy/Experiments). If you want to install the additional dependencies that allow you to use this tool run:
+
+```bash
+pip install ".[experiments]"
+```
+or
+
+```bash
+pip install -e ".[experiments]"
+```
+
+## Running the Knill error correction example with the experiments tool
+
+Move in the examples directory
+```bash
+cd examples
+```
+
+This will run the Knill error correction experiment, sequentially performing each simulation of 1 core:
+```bash
+experiment local-run knill_offline_online
+```
+
+To run the simulation using 10 cores:
+```bash
+experiment local-run knill_offline_online --parallel 10
+```
+
+To change the parameters in [`examples/experiments/knill_offline_online/config.yaml`](examples/experiments/knill_offline_online/config.yaml)
+
 ## What This Library Is For
 
 This library is not just a circuit generator. Its purpose is to help you write protocols in a modular way.

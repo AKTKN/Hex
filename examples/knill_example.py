@@ -90,6 +90,7 @@ def main():
     distances = [3, 5, 7]
     online_decoder = "pymatching"
     offline_decoder = "pymatching"
+    matchable_offline_decoding = True
     physical_error_rates = [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.01]
     max_shots = 10_000
     max_errors_before_halting = 500

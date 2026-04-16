@@ -14,3 +14,10 @@ dependencies = [
     "ldpc>=2,<3",
     "pymatching>2.0",
 ]
+
+[project.optional-dependencies]
+experiment = [
+    "pandas>=2.0",
+    "experiment @ git+https://github.com/ewanmurphy/Experiments.git",
+    "plotting_lib @ git+https://github.com/ewanmurphy/plotting_lib.git",
+]
