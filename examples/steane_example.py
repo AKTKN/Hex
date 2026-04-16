@@ -5,9 +5,9 @@ import numpy as np
 from numpy import ndarray
 
 from hex_qec.circuit_generation import get_parity_check_matrices
-from hex_qec.protocols import knill_online_offline
+from hex_qec.protocols import steane_online_offline
 
-def knill_error_correction(
+def steane_error_correction(
         code,
         distance,
         online_decoder,
@@ -70,7 +70,7 @@ def knill_error_correction(
     offline_decoder_generator = decoder_generators[offline_decoder]
     syndrome_measurement_rounds = distance
 
-    samples_performed, logical_errors = knill_online_offline(
+    samples_performed, logical_errors = steane_online_offline(
             parity_check_tuple,
             syndrome_measurement_rounds,
             online_decoder_generator,
@@ -99,7 +99,7 @@ def main():
 
     for distance in distances:
         for physical_error_rate in physical_error_rates:
-            samples_performed, logical_errors = knill_error_correction(
+            samples_performed, logical_errors = steane_error_correction(
                 code,
                 distance,
                 online_decoder,

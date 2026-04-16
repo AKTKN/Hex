@@ -318,3 +318,61 @@ def generate_bell_measurement_and_correction_module(
     #print(module.circuit.diagram())
 
     return module
+
+def generate_steane_correction_module(
+        parity_check_tuple: Tuple[ndarray],
+        physical_error: int,
+        pauli: str,
+        ancilla_block_support: List[int],
+        data_block_support: List[int],
+        decoder_generator: Callable[[ndarray], Callable[[ndarray], ndarray]],
+) -> measurement_module:
+    (x_pcm, z_pcm, x_logical, z_logical) = parity_check_tuple
+    k = x_logical.shape[0]
+    num_qubits = x_pcm.shape[1]
+
+    assert len(ancilla_block_support) == num_qubits
+    assert len(data_block_support) == num_qubits
+
+    # Generate measurement circuit
+    circuit = stim.Circuit()
+    circuit.append("I", range(0, 2*num_qubits))
+    if pauli.lower() == "z":
+        circuit.append("X_ERROR", range(num_qubits, 2*num_qubits), physical_error)
+        circuit.append("MR", range(num_qubits, 2*num_qubits))
+    elif pauli.lower() == "x":
+        circuit.append("Z_ERROR", range(num_qubits, 2*num_qubits), physical_error)
+        circuit.append("MRX", range(num_qubits, 2*num_qubits))
+    else:
+        print("Invalid pauli")
+        raise
+
+    def c_func(measurements):
+        if pauli.lower() == "z":
+            pcm = z_pcm
+            logicals = z_logical
+        elif pauli.lower() == "x":
+            pcm = x_pcm
+            logicals = x_logical
+        decoder = decoder_generator(pcm)
+
+        syndromes = (measurements @ pcm.T) % 2
+        corrections = decoder.decode_batch(syndromes)
+        return corrections
+
+    # Create correction array
+    correction_array = []
+    for correction_qubit in range(0, num_qubits):
+        if pauli.lower() == "z":
+            correction_array.append((f"X{correction_qubit}", len(circuit)))
+        elif pauli.lower() == "x":
+            correction_array.append((f"Z{correction_qubit}", len(circuit)))
+
+    module = measurement_module(
+        circuit,
+        c_func,
+        correction_array,
+        data_block_support + ancilla_block_support,
+    )
+
+    return module
