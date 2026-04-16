@@ -10,7 +10,6 @@ build/
 *.pdf
 *.json
 *.log
-*.yaml
 
 # Virtual environments
 venv/

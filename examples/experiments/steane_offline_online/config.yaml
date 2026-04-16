@@ -1,0 +1,17 @@
+# Experiment script
+script: steane_offline_online.py
+
+# Experiment parameters
+code: surface
+distance: [3, 5, 7]
+online_decoder: [pymatching]
+offline_decoder: [pymatching]
+matchable_offline_decoding: true
+physical_error_rate: {start: 0.002, end: 0.012, divisions: 8, scale: log}
+max_shots: 50_024
+max_errors_before_halting: 500
+pauli: z
+num_teleportations: [2]
+
+# Optional: post-processing script
+post_process_script: steane_offline_online_plotting.py
