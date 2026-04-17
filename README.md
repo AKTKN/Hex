@@ -27,12 +27,7 @@ pip install -e .
 I built this package to make is easier to run numerical experiments: [`https://github.com/ewanmurphy/Experiments`](https://github.com/ewanmurphy/Experiments). If you want to install the additional dependencies that allow you to use this tool run:
 
 ```bash
-pip install ".[experiments]"
-```
-or
-
-```bash
-pip install -e ".[experiments]"
+pip install -e ".[experiment]"
 ```
 
 ## Running the Knill error correction example with the experiments tool
@@ -52,7 +47,7 @@ To run the simulation using 10 cores:
 experiment local-run knill_offline_online --parallel 10
 ```
 
-To change the parameters in [`examples/experiments/knill_offline_online/config.yaml`](examples/experiments/knill_offline_online/config.yaml)
+To change the parameters modify the file: [`examples/experiments/knill_offline_online/config.yaml`](examples/experiments/knill_offline_online/config.yaml)
 
 ## What This Library Is For
 
@@ -419,6 +414,17 @@ This lets a module both propose corrections and mark shots for rejection.
   - `src/hex_qec/modularisation/modularised_circuit.py`
   - `src/hex_qec/modularisation/module_generation.py`
   - `src/hex_qec/protocols/knill_online_offline.py`
+
+## Attribution
+If you use this software in your research please cite as follows:
+```
+@software{murphy_hex_2026,
+  author       = {Ewan Murphy},
+  title        = {Hex: modular simulation toolkit for quantum error correction},
+  year         = {2026},
+  url          = {https://github.com/ewanmurphy/Hex},
+}
+```
 
 ## References
 [1] https://quantum-journal.org/papers/q-2022-07-20-767/
