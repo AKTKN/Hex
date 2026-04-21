@@ -426,5 +426,8 @@ If you use this software in your research please cite as follows:
 }
 ```
 
+## Papers that use Hex
+- [`Simplified circuit-level decoding using Knill error correction`](https://arxiv.org/abs/2603.05320).
+
 ## References
 [1] https://quantum-journal.org/papers/q-2022-07-20-767/
