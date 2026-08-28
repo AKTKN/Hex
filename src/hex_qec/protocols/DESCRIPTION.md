@@ -1,0 +1,139 @@
+# `protocols`
+
+This package contains the current fixed-round Knill and Steane protocol
+builders.  Both assemble a `modularised_circuit` and return the legacy pair
+`(samples_performed, logical_errors)`.
+
+## Common inputs and outputs
+
+`knill_online_offline` and `steane_online_offline` have the same positional
+signature:
+
+```python
+(
+    parity_check_tuple,
+    syndrome_measurement_rounds,
+    online_decoder_generator,
+    offline_decoder_generator,
+    matchable_offline_decoding,
+    physical_error,
+    max_shots,
+    max_errors_before_halting,
+    pauli,
+    num_teleportations,
+    results_path="",
+)
+```
+
+The matrix tuple is `(x_pcm, z_pcm, x_logical, z_logical)` with operator rows
+and physical-qubit columns.  Decoder generators are callables returning
+objects with `decode_batch`; the CSS state-preparation path also wraps an
+object exposing only scalar `decode`.  The online generator is used for
+teleportation/correction and final logical measurement.  The offline
+generator is used for noisy encoded-state preparation.  `pauli` selects the
+initial/final logical basis (`"x"` or `"z"`).
+
+The return value is the static engine's two-integer tuple.  The number of
+performed samples is normally a multiple of 256 because the engine samples
+fixed-size batches and may exceed `max_shots`.  `results_path` is passed to
+the static engine, which writes cumulative JSON statistics when nonempty.
+The protocol functions do not yet expose a protocol-level
+`SimulationResult`; callers that construct a `modularised_circuit` directly
+can use its `simulate_result(...)` wrapper. That wrapper preserves the static
+sampler and currently reports only fixed-round aggregate counts/LER and
+runtime. Adaptive event identity, confidence, short/long decisions, decoder
+diagnostics, and average SE rounds remain unpopulated until adaptive
+execution exists.
+
+## Knill protocol
+
+`knill_online_offline` allocates `2 * num_teleportations + 1` blocks.  Each
+block dictionary has data, X-ancilla, and Z-ancilla supports.  Block 0 is the
+initial data block.  For every teleportation index, one block is prepared as
+noisy `|0_L>` and the next as noisy `|+_L>`.
+
+The constructed module order is:
+
+```text
+ideal initial data preparation (selected by pauli)
+for each teleportation:
+    noisy |0_L> state preparation (offline decoder)
+    noisy |+_L> state preparation (offline decoder)
+    transversal CNOT: |+_L> control -> |0_L> target
+    Bell measurement/correction (online decoder)
+final logical measurement in the selected basis (online decoder)
+```
+
+The Bell module performs a transversal CNOT between the current data block and
+the first Bell block, measures those two blocks in X and Z bases, decodes the
+measurements using the code check matrices, and emits logical correction bits
+that are represented in the software measurement-update frame.  On later
+teleportations, the second Bell block from the previous step is the current
+data support.  The protocol does not run a dynamic decision between state
+preparation rounds; `syndrome_measurement_rounds` is fixed for every prepared
+ancilla.
+
+The standalone wrapper in `examples/knill_example.py` selects one of
+PyMatching, BP, or BP-OSD by name, loads matrices by code and distance, sets
+`syndrome_measurement_rounds = distance`, and returns the protocol tuple.
+
+## Steane protocol
+
+`steane_online_offline` uses the same block allocation and ideal initial data
+preparation.  For each teleportation index it appends:
+
+```text
+noisy |0_L> preparation
+transversal CNOT: |0_L> control -> current data target
+Steane correction in Z basis
+noisy |+_L> preparation
+transversal CNOT: current data control -> |+_L> target
+Steane correction in Z basis
+```
+
+The Steane correction helper measures an ancilla block, decodes its syndrome
+with the online generator, and maps the physical correction bits to the data
+block.  The final logical measurement is on block 0 rather than the final
+Bell-block support used by Knill.
+
+The bundled wrapper in `examples/steane_example.py` uses the same decoder
+selection and fixed-round convention as the Knill wrapper.
+
+## Dependencies and call graph
+
+The protocol modules depend on the circuit-generation and modularisation
+packages, Stim, NumPy, PyMatching, and `ldpc` for the example wrappers' BP
+and BP-OSD decoder factories.  The core call graph is:
+
+```text
+protocol function
+ -> create_stabilizers_and_block_template
+ -> generate_blocks / noiseless_unitary_state_prep
+ -> module_generation gadget builders
+ -> modularised_circuit(module_list)
+ -> generate_correction_to_measurement_flip_map
+ -> simulate
+```
+
+The protocol functions themselves do not construct decoder objects; they
+receive generators.  The example wrappers are where the named PyMatching,
+BP, and BP-OSD choices are converted into generators.
+
+## Current limitations
+
+- The API is fixed-round and positional; there is no adaptive schedule or
+  protocol-level adaptive schedule.  A separate
+  `StatefulFlipSimulatorBackend` can execute an already-built fixed circuit
+  with `stim.FlipSimulator`, but protocol functions still use the static
+  backend and return legacy tuples.
+- Decoder protocols and legacy adapters now exist in `hex_qec.decoders`, but
+  protocol callbacks still expose correction arrays and do not retain
+  confidence/convergence data in their return value.
+- No explicit validation enforces positive teleportation count, valid basis,
+  compatible matrix dimensions, or `syndrome_measurement_rounds` bounds.
+- The static engine's batch semantics and final detector assertion apply to
+  both protocols.  A decoder that fails to remove all detector flips can
+  therefore terminate the simulation with an assertion.
+- The code preserves the existing software correction convention by updating
+  future sampled measurement records through precomputed maps; it does not
+  physically apply decoded corrections while sampling.

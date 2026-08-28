@@ -15,6 +15,13 @@ import time
 from collections import defaultdict
 import json
 import logging
+from hex_qec.decoders import LegacyDecoderAdapter, LegacyDecoderGeneratorAdapter
+from .results import (
+    SimulationDetailLevel,
+    SimulationResult,
+    normalize_module_decode_output,
+    validate_simulation_detail_level,
+)
 
 # Just get a logger - don't configure it!
 logger = logging.getLogger(__name__)
@@ -191,27 +198,31 @@ class css_detector_module():
             self.z_weights = self.z_dem_priors
 
     def _generate_c_func(self) -> None:
-        def get_batch_decode(decoder, pcm):
-            if hasattr(decoder, "decode_batch") and callable(decoder.decode_batch):
-                return lambda syndromes: decoder.decode_batch(syndromes.astype(np.uint8))
-            else:
-                def decode_batch(syndrome_batch):
-                    errors = np.zeros(
-                        (syndrome_batch.shape[0], pcm.shape[1]), dtype=np.uint8
-                    )
-                    for i in range(0, syndrome_batch.shape[0]):
-                        errors[i, :] = decoder.decode(syndrome_batch[i, :].astype(np.uint8))
-                    return errors
-                return decode_batch
+        legacy_factory = LegacyDecoderGeneratorAdapter(
+            self.decoder_generator,
+            # These casts are part of the historical css_detector_module
+            # behavior and are retained for numerical compatibility.
+            cast_batch_to_uint8=True,
+            cast_scalar_to_uint8=True,
+        )
 
-        self.x_dem_decode_batch = get_batch_decode(self.decoder_generator(self.x_dem_check_matrix, weights=self.x_weights), self.x_dem_check_matrix)
-        self.z_dem_decode_batch = get_batch_decode(self.decoder_generator(self.z_dem_check_matrix, weights=self.z_weights), self.z_dem_check_matrix)
+        def get_batch_decode(decoder: LegacyDecoderAdapter):
+            # Keep this private callable's legacy ndarray return type.  The
+            # richer DecodeResult is available at the adapter boundary.
+            return lambda syndromes: decoder.decode_batch(syndromes).correction
+
+        self.x_dem_decode_batch = get_batch_decode(
+            legacy_factory.create(self.x_dem_check_matrix, weights=self.x_weights)
+        )
+        self.z_dem_decode_batch = get_batch_decode(
+            legacy_factory.create(self.z_dem_check_matrix, weights=self.z_weights)
+        )
         # These decoders are used move the state back into the all zero syndromes code space.
         # Using a decoder for this may be overkill and just performing the destabilizer corrections may be sufficient.
         # Additionally if the decoder you are using doesn't always perform the destabilizer correction
         # (e.g. in the case of belief propagation not converging) then this will likely be problematic
-        self.x_decode_batch = get_batch_decode(self.decoder_generator(self.x_pcm), self.x_pcm)
-        self.z_decode_batch = get_batch_decode(self.decoder_generator(self.z_pcm), self.z_pcm)
+        self.x_decode_batch = get_batch_decode(legacy_factory.create(self.x_pcm))
+        self.z_decode_batch = get_batch_decode(legacy_factory.create(self.z_pcm))
 
 
         # Generate correction arrays using the template circuit, as the eventual support with not affect the c_func
@@ -607,7 +618,13 @@ class detector_module():
             weights = self.dem_priors
         # The c_func for the detector measurement object should take in a batch of detector flips and return
         # an array of fault correction for each sample
-        self.c_func = lambda x : self.c_func_generator(self.dem_check_matrix, weights=weights).decode_batch(x)
+        def c_func(x):
+            decoder = LegacyDecoderGeneratorAdapter(
+                self.c_func_generator
+            ).create(self.dem_check_matrix, weights=weights)
+            return decoder.decode_batch(x).correction
+
+        self.c_func = c_func
 
     def _generate_dem(self):
         self.dem = self.circuit.detector_error_model()
@@ -733,8 +750,8 @@ class measurement_module():
         try:
             test_batch_size = 10
             test_c_func_input = np.zeros((test_batch_size, self.num_measurements), dtype=int)
-            c_func_output = c_func(test_c_func_input)
-            assert c_func_output.shape == (test_batch_size, len(correction_array))
+            c_func_output = normalize_module_decode_output(c_func(test_c_func_input))
+            assert c_func_output.corrections.shape == (test_batch_size, len(correction_array))
         except AssertionError as a:
             print(f"The output size of c_func doesn't match the fault array")
         except Exception as e:
@@ -974,25 +991,17 @@ class modularised_circuit():
                     # Apply the c_func
                     if isinstance(module, detector_module):
                         c_func_output = module.c_func(module_detectors)
-                        # Allow backwards compatability for c_funcs don't return a post_selection value
-                        if isinstance(c_func_output, tuple):
-                            corrections, module_postselection = c_func_output
-                            correciton = csc_matrix(corrections)
-                        else:
-                            corrections = csc_matrix(c_func_output)
-                            mode_postselection = np.zeros((SHOTS_PER_BATCH), dtype=int)
+                        module_decode_result = normalize_module_decode_output(c_func_output)
                     elif isinstance(module, measurement_module) or isinstance(module, css_detector_module):
                         c_func_output = module.c_func(module_measurements)
-                        # Allow backwards compatability for c_funcs don't return a post_selection value
-                        if isinstance(c_func_output, tuple):
-                            corrections, module_postselection = c_func_output
-                            correciton = csc_matrix(corrections)
-                        else:
-                            corrections = csc_matrix(c_func_output)
-                            module_postselection = np.zeros((SHOTS_PER_BATCH), dtype=int)
+                        module_decode_result = normalize_module_decode_output(c_func_output)
                     else:
                         logger.info("Unkown module")
                         raise
+                    corrections = csc_matrix(module_decode_result.corrections)
+                    module_postselection = module_decode_result.postselection
+                    if module_postselection is None:
+                        module_postselection = np.zeros((SHOTS_PER_BATCH), dtype=int)
                     #logger.info(self.measurements_by_module)
                     #logger.info_array_with_partitions(module.correction_to_measurement_flips.astype(int), self.measurements_by_module)
                     # The correction map is stored as a sparse matrix but you need to turn it back to an array to perform the mod 2 addition
@@ -1046,6 +1055,44 @@ class modularised_circuit():
                     
 
         return samples_performed, total_logical_errors
+
+    def simulate_result(
+        self,
+        max_shots: int,
+        max_errors_before_halting: int,
+        results_path: str = "",
+        detail_level: SimulationDetailLevel = "summary",
+    ) -> SimulationResult:
+        """Run the existing static simulation and wrap its aggregate result.
+
+        This method deliberately delegates to :meth:`simulate`, preserving
+        its sampler, batch size, stopping condition, correction propagation,
+        and legacy JSON output.  No adaptive branching or per-shot capture is
+        performed here.
+        """
+
+        detail_level = validate_simulation_detail_level(detail_level)
+        start_time = time.perf_counter()
+        samples_performed, logical_errors = self.simulate(
+            max_shots=max_shots,
+            max_errors_before_halting=max_errors_before_halting,
+            results_path=results_path,
+        )
+        runtime_seconds = time.perf_counter() - start_time
+
+        return SimulationResult.from_legacy(
+            samples_performed,
+            logical_errors,
+            runtime_seconds=runtime_seconds,
+            detail_level=detail_level,
+            metadata={
+                "execution_backend": "static_compiled",
+                "adaptive": False,
+                "num_modules": len(self.circuit_modules),
+                "num_measurements": self.circuit.num_measurements,
+                "num_detectors": self.circuit.num_detectors,
+            },
+        )
 
 def print_array_with_partitions(arr, partition_cols):
     """

@@ -9,6 +9,7 @@ import pymatching
 import time
 import copy
 import logging
+from hex_qec.decoders import LegacyDecoderAdapter, LegacyDecoderGeneratorAdapter
 
 # Just get a logger - don't configure it!
 logger = logging.getLogger(__name__)
@@ -52,21 +53,17 @@ def generate_logical_measurement_module(
         logicals = x_logical
 
     # Initialise decoder
-    decoder = decoder_generator(pcm)
-    if hasattr(decoder, "decode_batch") and callable(decoder.decode_batch):
-        decode_batch = decoder.decode_batch
-    else:
-        def batch_decoder(syndrome_batch):
-            errors = np.zeros(
-                (syndrome_batch.shape[0], pcm.shape[1]), dtype=np.int8
-            )
-            for i in range(0, syndrome_batch.shape[0]):
-                errors[i, :] = decoder.decode(syndrome_batch[i, :])
-            return errors
-        decode_batch = batch_decoder
+    decoder = LegacyDecoderAdapter(
+        decoder_generator(pcm),
+        pcm,
+        cast_batch_to_uint8=True,
+        correction_dtype=np.int8,
+    )
     def c_func(measurements):
         syndromes = (measurements @ pcm.T) % 2
-        corrections = decode_batch(syndromes.astype(np.uint8))
+        # The historical batch path passed uint8 syndromes.  Keep that cast;
+        # the scalar fallback retains its historical input dtype.
+        corrections = decoder.decode_batch(syndromes).correction
         corrected_measurements = (measurements + corrections) % 2
         logical_values = (corrected_measurements @ logicals.T) % 2
         return logical_values
@@ -250,31 +247,12 @@ def generate_bell_measurement_and_correction_module(
     circuit.append("X_ERROR", range(num_qubits, 2*num_qubits), bell_measurement_circuit_error)
     circuit.append("MR", range(num_qubits, 2*num_qubits))
 
-    x_decoder = decoder_generator(x_pcm)
-    z_decoder = decoder_generator(z_pcm)
-    if hasattr(x_decoder, "decode_batch") and callable(x_decoder.decode_batch):
-        x_decode_batch = x_decoder.decode_batch
-    else:
-        def x_batch_decoder(x_syndrome_batch):
-            z_errors = np.zeros(
-                (x_syndrome_batch.shape[0], x_pcm.shape[1]), dtype=np.int8
-            )
-            for i in range(0, x_syndrome_batch.shape[0]):
-                z_errors[i, :] = x_decoder.decode(x_syndrome_batch[i, :])
-            return z_errors
-        x_decode_batch = x_batch_decoder
-
-    if hasattr(z_decoder, "decode_batch") and callable(z_decoder.decode_batch):
-        z_decode_batch = z_decoder.decode_batch
-    else:
-        def z_batch_decoder(z_syndrome_batch):
-            x_errors = np.zeros(
-                (z_syndrome_batch.shape[0], z_pcm.shape[1]), dtype=np.int8
-            )
-            for i in range(0, z_syndrome_batch.shape[0]):
-                x_errors[i, :] = z_decoder.decode(z_syndrome_batch[i, :])
-            return x_errors
-        z_decode_batch = z_batch_decoder
+    x_decoder = LegacyDecoderAdapter(
+        decoder_generator(x_pcm), x_pcm, correction_dtype=np.int8
+    )
+    z_decoder = LegacyDecoderAdapter(
+        decoder_generator(z_pcm), z_pcm, correction_dtype=np.int8
+    )
         
     def c_func(measurements):
         # For the moment I am just going to do CSS decoding
@@ -282,8 +260,8 @@ def generate_bell_measurement_and_correction_module(
         z_measurements = measurements[:, num_qubits:2*num_qubits]
         x_syndromes = (x_measurements @ x_pcm.T) % 2
         z_syndromes = (z_measurements @ z_pcm.T) % 2
-        z_errors = x_decode_batch(x_syndromes)
-        x_errors = z_decode_batch(z_syndromes)
+        z_errors = x_decoder.decode_batch(x_syndromes).correction
+        x_errors = z_decoder.decode_batch(z_syndromes).correction
         x_measurements = (x_measurements + z_errors) % 2
         z_measurements = (z_measurements + x_errors) % 2
         x_logical_measurements = (x_measurements @ x_logical.T) % 2
@@ -354,10 +332,9 @@ def generate_steane_correction_module(
         elif pauli.lower() == "x":
             pcm = x_pcm
             logicals = x_logical
-        decoder = decoder_generator(pcm)
-
         syndromes = (measurements @ pcm.T) % 2
-        corrections = decoder.decode_batch(syndromes)
+        decoder = LegacyDecoderGeneratorAdapter(decoder_generator).create(pcm)
+        corrections = decoder.decode_batch(syndromes).correction
         return corrections
 
     # Create correction array
