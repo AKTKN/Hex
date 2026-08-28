@@ -1,10 +1,10 @@
-# Baseline status
+# Implementation status
 
 Date: 2026-08-28  
 Branch: `hex-adaptive`  
-Commit: `2a3a309968d0f764510e076a70d0fa1e20d29da7` (`Add Knill paper to README`)
+Commit: `03d512c` (`Implement structured simulation results and stateful backend for fixed-round protocols`)
 
-## Completed in this Phase 0 session
+## Completed checkpoints
 
 - Read `AGENTS.md`, `PLAN.md`, and `FUTURE.md` before inspection.
 - Inspected repository state/history, package layout, exports, dependencies,
@@ -28,6 +28,12 @@ Commit: `2a3a309968d0f764510e076a70d0fa1e20d29da7` (`Add Knill paper to README`)
 - Implemented Phase 3 `StatefulFlipSimulatorBackend` under
   `src/hex_qec/simulation/stateful.py` for fixed-round module-by-module
   execution with `stim.FlipSimulator`.
+- Implemented the Phase 4 two-level state-preparation descriptions and
+  diagnostic Phase 5 executor under
+  `src/hex_qec/modularisation/adaptive_state_prep.py` and
+  `src/hex_qec/simulation/adaptive.py`.
+- Added `AdaptivePolicy`, `AlwaysShortPolicy`, and `AlwaysLongPolicy`; mixed
+  per-shot policy masks and confidence-threshold switching remain disabled.
 - Integrated the adapters into existing decoder call sites while preserving
   historical input casts and scalar-fallback output dtypes.
 - Added focused tests under `tests/test_phase1_decoder_adapters.py`.
@@ -49,13 +55,23 @@ unchanged static `simulate(...)` method and currently records aggregate
 shots/errors/LER/runtime and static-circuit metadata only.  There is no
 adaptive scheduler, confidence-driven branching, or per-shot recorder.  The
 new stateful backend is available separately and does not replace the static
-backend or the protocol default.
+backend or the protocol default.  The two-level adaptive layer can build
+short/extra/long state-preparation descriptions and execute uniform forced
+endpoints, but is not yet wired into the full Knill protocol.
 
 The stateful backend reconstructs physical records with
 `Circuit.reference_sample() XOR get_measurement_flips().T`, while maintaining
 decoder corrections in a separate software measurement-flip frame.  It
 executes each module on one physical simulator state and does not apply
 decoded corrections to that state.
+
+The adaptive state-preparation executor runs `short_circuit` first. With
+`AlwaysLongPolicy`, it continues the same `FlipSimulator` instance with the
+exact `extra_circuit` suffix and decodes the complete long record. It verifies
+that the reconstructed long record retains the short prefix. With
+`AlwaysShortPolicy`, it stops after the short result. It currently rejects a
+mixed mask because branch-specific record/state handling belongs to the full
+Phase 5 implementation.
 
 The source checkout is not installed as a `hex-qec` distribution in the test
 environment, so smoke tests use `PYTHONPATH=src`.  `stimbposd` was missing at
@@ -132,9 +148,22 @@ that logic only after compatibility coverage remains stable.  The legacy
 detector module still constructs its decoder during each callback, preserving
 historical behavior but leaving a future performance question.
 
+## Phases 4 and diagnostic Phase 5 validation
+
+`AdaptiveSERounds` and `AdaptiveStatePrepModule` now expose the short circuit,
+exact extra suffix, and full long circuit/decoder.  The diagnostic executor
+supports uniform `AlwaysShortPolicy` and `AlwaysLongPolicy` only.  Endpoint
+tests pass for both X and Z state preparation; short/long decoder outputs
+match the ordinary fixed-round builders exactly, and long execution preserves
+the short physical prefix on the same `FlipSimulator` instance.  A mixed
+policy mask raises `NotImplementedError` by design, so confidence-threshold
+switching and branch-specific state/record handling have not been enabled.
+
 ## Next recommended task
 
 Begin the next adaptive phase only after deciding how protocol-level result
 plumbing should expose event identities.  The fixed-round stateful/static
 comparisons required by Phase 3 have passed; do not add short/long branching
-or replace the static backend as part of that plumbing decision.
+or replace the static backend as part of that plumbing decision.  The next
+implementation step is the full branch representation and protocol
+integration, including multiple adaptive preparations per Knill round.

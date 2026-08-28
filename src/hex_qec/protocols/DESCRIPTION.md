@@ -125,7 +125,10 @@ BP, and BP-OSD choices are converted into generators.
   protocol-level adaptive schedule.  A separate
   `StatefulFlipSimulatorBackend` can execute an already-built fixed circuit
   with `stim.FlipSimulator`, but protocol functions still use the static
-  backend and return legacy tuples.
+  backend and return legacy tuples.  Two-level state-preparation descriptions
+  and AlwaysShort/AlwaysLong diagnostic execution are available in the
+  modularisation and simulation packages but are not yet wired into these
+  protocol entry points.
 - Decoder protocols and legacy adapters now exist in `hex_qec.decoders`, but
   protocol callbacks still expose correction arrays and do not retain
   confidence/convergence data in their return value.

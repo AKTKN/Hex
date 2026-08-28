@@ -89,6 +89,8 @@ Hex/
         └── simulation/
             ├── __init__.py
             ├── stateful.py
+            ├── adaptive.py
+            ├── policies.py
             └── DESCRIPTION.md
 ```
 
@@ -223,7 +225,14 @@ the static engine.  Phase 2 now provides `SimulationSummary` and
 legacy `simulate(...)` tuple and protocol workflows remain unchanged.
 Fixed-round runs populate aggregate counts/LER/runtime and metadata only.
 Adaptive event statistics, confidence/decision fields, decoder diagnostics,
-and per-shot/debug records remain empty until adaptive execution exists.
+and per-shot/debug records remain empty until adaptive result integration
+exists.
+
+The two-level diagnostic state-preparation layer now defines
+`AdaptiveSERounds`, `AdaptiveStatePrepModule`, `AdaptivePolicy`,
+`AlwaysShortPolicy`, and `AlwaysLongPolicy`.  Its executor supports only
+uniform forced policies; a mixed per-shot mask raises
+`NotImplementedError` until the full branching phase.
 
 Do not force third-party decoder classes to inherit from a Hex class. Use adapters/protocols/factories where possible.
 
@@ -342,9 +351,11 @@ src/hex_qec/
 
 Do not create these directories blindly. First inspect the local repository and choose names consistent with existing style. The architectural boundaries are more important than the exact paths.
 
-Phase 3 currently implements only `simulation/stateful.py` and its package
-exports.  Result classes remain in `modularisation/results.py`; the planned
-adaptive policies and adaptive state-preparation builder do not yet exist.
+Phases 4 and diagnostic Phase 5 currently add `simulation/policies.py`,
+`simulation/adaptive.py`, and `modularisation/adaptive_state_prep.py` for
+uniform AlwaysShort/AlwaysLong execution.  Result classes remain in
+`modularisation/results.py`; mixed per-shot branching and confidence
+thresholding do not yet exist.
 
 ## Result-data design principles
 
@@ -533,10 +544,11 @@ The present task creates `AGENTS.md`, `PLAN.md`, and `FUTURE.md`. The remaining 
 
 ## Local Phase 0 facts
 
-The local branch was checked on 2026-08-28.  Its `HEAD` is
+The local branch was checked on 2026-08-28.  Its Phase 0 `HEAD` was
 `2a3a309968d0f764510e076a70d0fa1e20d29da7`, matching the upstream snapshot
-recorded above.  No tracked source-code changes are present; the repository
-guide and development documentation are local untracked files.  The source
+recorded above.  Subsequent Phase 1–3 source changes are now present in
+commit `03d512c`; the Phase 4/diagnostic Phase 5 adaptive files and
+development documentation remain local working-tree changes.  The source
 checkout is not installed as a `hex-qec` distribution in the baseline Python
 environment, so source-level smoke tests use `PYTHONPATH=src`.  The checked-in
 package requires `stimbposd`, which was initially absent from that environment

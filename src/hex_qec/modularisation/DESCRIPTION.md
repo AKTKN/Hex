@@ -211,6 +211,25 @@ The separate `hex_qec.simulation.StatefulFlipSimulatorBackend` executes the
 same fixed module list sequentially, but is not selected by `simulate` and
 does not change the static backend.
 
+## Two-level state-preparation descriptions
+
+`AdaptiveSERounds(short_rounds, long_rounds, policy)` is a frozen configuration
+with the invariant `1 <= short_rounds <= long_rounds`. `AdaptivePolicy`,
+`AlwaysShortPolicy`, and `AlwaysLongPolicy` live in `hex_qec.simulation`.
+
+`generate_adaptive_state_prep_module(...)` and
+`generate_adaptive_state_prep_modules(...)` compose separate short and long
+`css_detector_module` objects. An `AdaptiveStatePrepModule` exposes
+`short_circuit`, `extra_circuit`, and `long_circuit`, plus the corresponding
+short/long decoders. The short circuit contains initialization and SE rounds
+1 through `short_rounds`; `extra_circuit` is the exact suffix through
+`long_rounds`; and `long_circuit` contains the complete history used by the
+long decoder. The suffix is checked not to reinitialize data-qubit positions.
+
+These descriptions are not automatically inserted into the existing Knill or
+Steane protocol builders. The diagnostic executor currently supports only
+uniform forced policies, so ordinary protocol workflows remain fixed-round.
+
 ## Gadget constructors and call flow
 
 `module_generation.py` provides the protocol-facing builders:
@@ -249,8 +268,8 @@ protocol builder
 The layer depends on Stim, NumPy, SciPy sparse matrices, stimbposd, and (for
 one gadget) PyMatching.  It now has a common decoder result type and legacy
 adapters, but still assumes decoder generators accept the historical
-duck-typed calling convention. There is no confidence policy or adaptive
-branching. The stateful backend is fixed-round only, and neither backend's
+duck-typed calling convention. There is no confidence-threshold policy or
+mixed adaptive branching. The stateful backend is fixed-round only, and neither backend's
 result wrapper currently collects shot-level records or decoder
 confidence/diagnostics. Several constructors use
 mutable list defaults, support remapping is text-based, and some validation is

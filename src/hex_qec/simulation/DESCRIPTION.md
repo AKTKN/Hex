@@ -1,7 +1,17 @@
 # `simulation`
 
-This package contains the Phase 3 stateful fixed-round backend. It does not
-implement short/long branching or any adaptive policy.
+This package contains the Phase 3 stateful fixed-round backend and the
+diagnostic execution pieces for the two-level adaptive state-preparation
+design. It does not implement confidence-threshold switching or mixed
+per-shot branching.
+
+## Policies
+
+`AdaptivePolicy` is a `Protocol` whose `should_extend(...)` method receives a
+short `DecodeResult` and `AdaptivePolicyContext`, then returns a boolean array
+with shape `(batch_size,)`. `AlwaysShortPolicy` returns all false values and
+`AlwaysLongPolicy` returns all true values. Their purpose is endpoint
+diagnostics; no confidence value is interpreted by either policy.
 
 ## `StatefulFlipSimulatorBackend`
 
@@ -35,10 +45,40 @@ software interpretation separate and avoids double application.
 stateful-backend metadata. Fixed-round runs still do not populate adaptive
 event statistics or per-shot/debug payloads.
 
+## Two-level state-preparation diagnostics
+
+`AdaptiveSERounds(short_rounds, long_rounds, policy)` validates
+`1 <= short_rounds <= long_rounds`. `AdaptiveStatePrepModule` composes:
+
+```text
+short_circuit: initialization + rounds 1..short_rounds
+extra_circuit: rounds short_rounds+1..long_rounds
+long_circuit: initialization + rounds 1..long_rounds
+```
+
+The short and long circuits are built from separate
+`css_detector_module` instances. The long decoder therefore receives the
+complete long measurement array with shape
+`(shots, long_circuit.num_measurements)`, while the short decoder receives
+`(shots, short_circuit.num_measurements)`. `extra_circuit` is an exact Stim
+instruction suffix of `long_circuit` and is checked not to reset data-qubit
+positions.
+
+`StatefulAdaptiveStatePrepExecutor.execute(...)` runs the short circuit and,
+for `AlwaysLongPolicy`, runs the extra suffix on the same
+`stim.FlipSimulator` instance. It verifies that the long reconstructed record
+has the identical short prefix. The short correction is not committed on the
+long endpoint; only the selected short or long result is returned. A mixed
+policy mask currently raises `NotImplementedError`, which is reserved for
+the full branching phase.
+
 ## Limitations
 
 - This backend executes the complete fixed module list and makes no adaptive
   decision.
+- The adaptive executor supports only uniform AlwaysShort and AlwaysLong
+  diagnostic policies; it does not yet execute mixed short/long branches or
+  confidence-threshold switching.
 - It uses the existing 256-shot batch convention by default, but accepts a
   configurable batch size for tests and experiments.
 - `reference_sample()` is computed for the complete concatenated circuit and

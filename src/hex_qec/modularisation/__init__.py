@@ -8,6 +8,12 @@ from .results import (
     SimulationSummary,
     normalize_module_decode_output,
 )
+from .adaptive_state_prep import (
+    AdaptiveSERounds,
+    AdaptiveStatePrepModule,
+    generate_adaptive_state_prep_module,
+    generate_adaptive_state_prep_modules,
+)
 
 __all__ = [
     "logical_measurement_module",
@@ -20,4 +26,8 @@ __all__ = [
     "SimulationDetailLevel",
     "ModuleDecodeResult",
     "normalize_module_decode_output",
+    "AdaptiveSERounds",
+    "AdaptiveStatePrepModule",
+    "generate_adaptive_state_prep_module",
+    "generate_adaptive_state_prep_modules",
 ]

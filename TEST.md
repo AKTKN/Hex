@@ -319,3 +319,62 @@ No adaptive simulator or core-code refactor was implemented or tested.
     Outcome: PASS. Python compilation and whitespace validation completed;
     the expected Phase 1/2/3 source, test, and documentation files are the
     only listed working-tree changes.
+
+## Phases 4 and diagnostic Phase 5 checks
+
+49. Direct adaptive endpoint probe importing
+    `StatefulAdaptiveStatePrepExecutor` from `hex_qec.simulation` before the
+    lazy-export correction.
+
+    Outcome: FAIL with an import cycle between
+    `modularisation.adaptive_state_prep` and `simulation.adaptive`. The
+    simulation package export was changed to lazy loading; no numerical code
+    was changed by the correction.
+
+50. Direct d=3 adaptive state-preparation probe with
+    `AdaptiveSERounds(1, 3, policy)`, PyMatching, and batch size 4.
+
+    Outcome: PASS after the lazy-export correction. The description exposed
+    short/extra/long measurement counts `8/16/24`; AlwaysShort selected an
+    8-measurement result and AlwaysLong selected a 24-measurement result.
+
+51. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py`.
+
+    Outcome: PASS, 7 tests passed with 8 dependency deprecation warnings in
+    1.54 s. This covered forced policies, exact circuit decomposition, data
+    reset protection, same-shot long continuation, complete long-history
+    decoding, and ordinary fixed-round decoder endpoint equivalence for X/Z.
+
+52. `PYTHONPATH=src pytest -q tests`.
+
+    Outcome: PASS, 32 tests passed with 8 dependency deprecation warnings in
+    3.58 s.
+
+53. Final post-documentation command:
+    `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py &&
+    PYTHONPATH=src pytest -q tests && PYTHONPATH=src python -m compileall -q
+    src tests && git diff --check`.
+
+    Outcome: PASS. The adaptive endpoint suite passed 7 tests, the full local
+    suite passed 32 tests, compilation succeeded, and whitespace validation
+    passed; each pytest invocation reported 8 dependency deprecation warnings.
+
+54. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py` after
+    adding explicit mixed-mask deferral and multiple-support coverage.
+
+    Outcome: PASS, 9 tests passed with 8 dependency deprecation warnings in
+    1.41 s.
+
+55. Final `PYTHONPATH=src pytest -q tests && PYTHONPATH=src python -m
+    compileall -q src tests && git diff --check`.
+
+    Outcome: PASS. The full local suite passed 34 tests, compilation
+    succeeded, and whitespace validation passed; pytest reported 8 dependency
+    deprecation warnings.
+
+56. `git diff --check && PYTHONPATH=src python -m compileall -q src tests &&
+    git status --short` after final documentation updates.
+
+    Outcome: PASS. Compilation and whitespace validation succeeded; the
+    working tree contains only the expected Phase 4/diagnostic Phase 5 source,
+    test, and documentation changes.
