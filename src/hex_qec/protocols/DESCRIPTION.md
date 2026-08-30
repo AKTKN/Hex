@@ -1,8 +1,8 @@
 # `protocols`
 
-This package contains the current fixed-round Knill and Steane protocol
-builders.  Both assemble a `modularised_circuit` and return the legacy pair
-`(samples_performed, logical_errors)`.
+This package contains the fixed-round Knill and Steane builders plus a
+separate stateful two-level adaptive Knill builder. The legacy builders still
+return `(samples_performed, logical_errors)`.
 
 ## Common inputs and outputs
 
@@ -37,13 +37,11 @@ The return value is the static engine's two-integer tuple.  The number of
 performed samples is normally a multiple of 256 because the engine samples
 fixed-size batches and may exceed `max_shots`.  `results_path` is passed to
 the static engine, which writes cumulative JSON statistics when nonempty.
-The protocol functions do not yet expose a protocol-level
+The legacy protocol functions do not expose a protocol-level
 `SimulationResult`; callers that construct a `modularised_circuit` directly
-can use its `simulate_result(...)` wrapper. That wrapper preserves the static
-sampler and currently reports only fixed-round aggregate counts/LER and
-runtime. Adaptive event identity, confidence, short/long decisions, decoder
-diagnostics, and average SE rounds remain unpopulated until adaptive
-execution exists.
+can use its `simulate_result(...)` wrapper. The separate
+`knill_online_offline_adaptive(...)` entry point returns `SimulationResult`
+with adaptive event statistics.
 
 ## Knill protocol
 
@@ -72,6 +70,15 @@ teleportations, the second Bell block from the previous step is the current
 data support.  The protocol does not run a dynamic decision between state
 preparation rounds; `syndrome_measurement_rounds` is fixed for every prepared
 ancilla.
+
+`knill_online_offline_adaptive(...)` accepts an `AdaptiveSERounds` object
+instead of a fixed integer. For every teleportation it creates adaptive
+`|0_L>` and `|+_L>` events. Each event decodes the short record, calls the
+configured policy, continues low-confidence shots on their existing physical
+simulator, and decodes the full long history. The optional
+`confidence_aggregator` receives the four inner CSS `DecodeResult` objects and
+returns the module-level confidence array, keeping metric selection out of
+the simulator.
 
 The standalone wrapper in `examples/knill_example.py` selects one of
 PyMatching, BP, or BP-OSD by name, loads matrices by code and distance, sets
@@ -119,19 +126,26 @@ The protocol functions themselves do not construct decoder objects; they
 receive generators.  The example wrappers are where the named PyMatching,
 BP, and BP-OSD choices are converted into generators.
 
+The adaptive call graph is:
+
+```text
+knill_online_offline_adaptive
+ -> adaptive state-preparation descriptions
+ -> ordinary Knill gadget modules
+ -> StatefulAdaptiveKnillExecutor
+ -> per-shot physical execution and software correction maps
+ -> SimulationResult
+```
+
 ## Current limitations
 
-- The API is fixed-round and positional; there is no adaptive schedule or
-  protocol-level adaptive schedule.  A separate
+- The legacy API is fixed-round and positional. A separate
   `StatefulFlipSimulatorBackend` can execute an already-built fixed circuit
-  with `stim.FlipSimulator`, but protocol functions still use the static
-  backend and return legacy tuples.  Two-level state-preparation descriptions
-  and AlwaysShort/AlwaysLong diagnostic execution are available in the
-  modularisation and simulation packages but are not yet wired into these
-  protocol entry points.
-- Decoder protocols and legacy adapters now exist in `hex_qec.decoders`, but
-  protocol callbacks still expose correction arrays and do not retain
-  confidence/convergence data in their return value.
+  with `stim.FlipSimulator`; legacy protocol functions still use the static
+  backend and return legacy tuples.
+- Decoder protocols and legacy adapters now exist in `hex_qec.decoders`.
+  Adaptive CSS modules retain rich decoder results through `c_func_rich`; the
+  legacy callbacks still expose correction arrays.
 - No explicit validation enforces positive teleportation count, valid basis,
   compatible matrix dimensions, or `syndrome_measurement_rounds` bounds.
 - The static engine's batch semantics and final detector assertion apply to
@@ -140,3 +154,5 @@ BP, and BP-OSD choices are converted into generators.
 - The code preserves the existing software correction convention by updating
   future sampled measurement records through precomputed maps; it does not
   physically apply decoded corrections while sampling.
+- Adaptive execution is an unoptimized one-shot reference path and does not
+  compact branches.

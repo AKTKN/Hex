@@ -1,8 +1,8 @@
 # Implementation status
 
-Date: 2026-08-28  
+Date: 2026-08-29
 Branch: `hex-adaptive`  
-Commit: `03d512c` (`Implement structured simulation results and stateful backend for fixed-round protocols`)
+Base commit: `cc26813` (`Implement two-level adaptive state-preparation framework with diagnostic policies`)
 
 ## Completed checkpoints
 
@@ -28,12 +28,19 @@ Commit: `03d512c` (`Implement structured simulation results and stateful backend
 - Implemented Phase 3 `StatefulFlipSimulatorBackend` under
   `src/hex_qec/simulation/stateful.py` for fixed-round module-by-module
   execution with `stim.FlipSimulator`.
-- Implemented the Phase 4 two-level state-preparation descriptions and
-  diagnostic Phase 5 executor under
+- Implemented the Phase 4 two-level state-preparation descriptions and Phase 5
+  executor under
   `src/hex_qec/modularisation/adaptive_state_prep.py` and
   `src/hex_qec/simulation/adaptive.py`.
-- Added `AdaptivePolicy`, `AlwaysShortPolicy`, and `AlwaysLongPolicy`; mixed
-  per-shot policy masks and confidence-threshold switching remain disabled.
+- Added `AdaptivePolicy`, `AlwaysShortPolicy`, `AlwaysLongPolicy`, and the
+  example `ClusterLLRPolicy`.
+- Implemented confidence-driven mixed short/long execution. Low-confidence
+  shots continue the same physical `FlipSimulator` state through the extra
+  suffix; the long decoder receives the complete round-1..long history.
+- Added `HexBPLSDDecoder` and `make_bplsd_decoder_generator(...)` as an
+  adapter example exposing BP-LSD cluster LLR through `DecodeResult.confidence`.
+- Added the separate `knill_online_offline_adaptive(...)` result-returning
+  entry point, including `|0_L>` and `|+_L>` events at each teleportation.
 - Integrated the adapters into existing decoder call sites while preserving
   historical input casts and scalar-fallback output dtypes.
 - Added focused tests under `tests/test_phase1_decoder_adapters.py`.
@@ -44,20 +51,20 @@ Commit: `03d512c` (`Implement structured simulation results and stateful backend
 
 ## Current implementation
 
-The repository is still a fixed-round implementation.  Protocols build a
-complete static Stim circuit, precompute correction-to-measurement maps, then
-sample in batches of 256 and walk through the modules in software.  Phase 1
-now provides a confidence-capable `DecodeResult`, decoder protocols, legacy
-decoder adapters, and `ModuleDecodeResult` normalization.  Phase 2 adds
-`SimulationSummary`, `AdaptiveStatePrepStats`, and `SimulationResult`, plus
-`modularised_circuit.simulate_result(...)`.  This wrapper delegates to the
-unchanged static `simulate(...)` method and currently records aggregate
-shots/errors/LER/runtime and static-circuit metadata only.  There is no
-adaptive scheduler, confidence-driven branching, or per-shot recorder.  The
-new stateful backend is available separately and does not replace the static
-backend or the protocol default.  The two-level adaptive layer can build
-short/extra/long state-preparation descriptions and execute uniform forced
-endpoints, but is not yet wired into the full Knill protocol.
+The legacy repository remains fixed-round: its protocols build a complete
+static Stim circuit, precompute correction-to-measurement maps, sample in
+batches of 256, and return the historical two-count tuple.  Phase 1 provides
+`DecodeResult`, decoder protocols/adapters, and `ModuleDecodeResult`
+normalization.  Phase 2 adds `SimulationSummary`, `AdaptiveStatePrepStats`,
+and `SimulationResult`.  Phase 3 adds the separate fixed-round
+`StatefulFlipSimulatorBackend`.
+
+The new `knill_online_offline_adaptive(...)` entry point uses the separate
+stateful adaptive executor.  It performs short decoding, policy evaluation,
+same-shot continuation for selected shots, full-history long decoding, and
+event/result aggregation.  The legacy protocol entry points and static backend
+are unchanged.  `ClusterLLRPolicy` is an example policy; the executor does
+not assume BP-LSD or a particular confidence metric.
 
 The stateful backend reconstructs physical records with
 `Circuit.reference_sample() XOR get_measurement_flips().T`, while maintaining
@@ -65,13 +72,12 @@ decoder corrections in a separate software measurement-flip frame.  It
 executes each module on one physical simulator state and does not apply
 decoded corrections to that state.
 
-The adaptive state-preparation executor runs `short_circuit` first. With
-`AlwaysLongPolicy`, it continues the same `FlipSimulator` instance with the
-exact `extra_circuit` suffix and decodes the complete long record. It verifies
-that the reconstructed long record retains the short prefix. With
-`AlwaysShortPolicy`, it stops after the short result. It currently rejects a
-mixed mask because branch-specific record/state handling belongs to the full
-Phase 5 implementation.
+The adaptive state-preparation executor runs `short_circuit` first. It calls
+the policy with the short `DecodeResult`, continues only selected shots on
+the same `FlipSimulator` instance with the exact `extra_circuit` suffix, and
+decodes the complete long record. It verifies that the reconstructed long
+record retains the short prefix. The short correction is committed only for
+short shots; the long correction is committed only for long shots.
 
 The source checkout is not installed as a `hex-qec` distribution in the test
 environment, so smoke tests use `PYTHONPATH=src`.  `stimbposd` was missing at
@@ -148,22 +154,24 @@ that logic only after compatibility coverage remains stable.  The legacy
 detector module still constructs its decoder during each callback, preserving
 historical behavior but leaving a future performance question.
 
-## Phases 4 and diagnostic Phase 5 validation
+## Phases 4 and 5 validation
 
-`AdaptiveSERounds` and `AdaptiveStatePrepModule` now expose the short circuit,
-exact extra suffix, and full long circuit/decoder.  The diagnostic executor
-supports uniform `AlwaysShortPolicy` and `AlwaysLongPolicy` only.  Endpoint
-tests pass for both X and Z state preparation; short/long decoder outputs
-match the ordinary fixed-round builders exactly, and long execution preserves
-the short physical prefix on the same `FlipSimulator` instance.  A mixed
-policy mask raises `NotImplementedError` by design, so confidence-threshold
-switching and branch-specific state/record handling have not been enabled.
+`AdaptiveSERounds` and `AdaptiveStatePrepModule` expose the short circuit,
+exact extra suffix, and full long circuit/decoder.  Endpoint tests pass for
+both X and Z state preparation; short/long decoder outputs match the ordinary
+fixed-round builders exactly; and long execution preserves the short physical
+prefix on the same `FlipSimulator` instance.  A real cluster-LLR threshold
+test produces both short and long shots.  Adaptive Knill smoke tests cover
+both bases, two teleportations, and confidence-result fields.
+
+The reference implementation intentionally executes one shot at a time and
+does not compact branch states.  Confidence calibration, circuit-derived
+code-capacity priors, and optimized branch execution remain future work.
 
 ## Next recommended task
 
-Begin the next adaptive phase only after deciding how protocol-level result
-plumbing should expose event identities.  The fixed-round stateful/static
-comparisons required by Phase 3 have passed; do not add short/long branching
-or replace the static backend as part of that plumbing decision.  The next
-implementation step is the full branch representation and protocol
-integration, including multiple adaptive preparations per Knill round.
+The next recommended step is diagnostic validation of confidence calibration
+and then a separately scoped optimization of branch execution.  Do not change
+the static backend or decoder mathematics.  Circuit-derived code-capacity
+priors and confidence-threshold selection policy remain experimental and are
+documented in `FUTURE.md`.

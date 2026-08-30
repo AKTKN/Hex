@@ -61,6 +61,7 @@ class AdaptiveStatePrepStats:
     confidence_summary: dict[str, float] = field(default_factory=dict)
     decoder_diagnostics: dict[str, Any] = field(default_factory=dict)
     average_se_rounds: float | None = None
+    logical_error_count: int | None = None
 
 
 @dataclass

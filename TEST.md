@@ -219,6 +219,34 @@ No adaptive simulator or core-code refactor was implemented or tested.
     Outcome: PASS. Python compilation and whitespace validation completed
     successfully.
 
+62. Final `PYTHONPATH=src python -m compileall -q src tests examples && git
+    diff --check` after the resumed documentation corrections.
+
+    Outcome: PASS. Python compilation and whitespace validation completed
+    successfully.
+
+63. Direct confidence-switching smoke for d=3, BP-LSD offline decoding,
+    `AdaptiveSERounds(1, 2, ClusterLLRPolicy(0.001))`, two teleportations,
+    two shots, and `detail_level="analysis"`.
+
+    Outcome: PASS. The run returned `(2, 0)`, four adaptive event records,
+    `used_long.shape == (2, 4)`, and mixed long counts `[0, 1, 1, 0]` across
+    the two teleportation indices and both ancilla bases.
+
+64. `PYTHONPATH=src pytest -q tests/test_phase5_confidence_adaptive.py
+    tests/test_phase4_adaptive_state_prep.py` after the adapter option and
+    custom-integration documentation correction.
+
+    Outcome: PASS, 14 tests passed with 8 dependency deprecation warnings in
+    2.88 s.
+
+65. Final `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m compileall -q
+    src tests examples && git diff --check`.
+
+    Outcome: PASS. The full local suite passed 39 tests with 8 dependency
+    deprecation warnings in 5.05 s; compilation and whitespace validation
+    also passed.
+
 ## Phase 3 implementation checks
 
 34. Initial Stim API introspection using `inspect.signature` on the built-in
@@ -378,3 +406,38 @@ No adaptive simulator or core-code refactor was implemented or tested.
     Outcome: PASS. Compilation and whitespace validation succeeded; the
     working tree contains only the expected Phase 4/diagnostic Phase 5 source,
     test, and documentation changes.
+
+## Phase 5 confidence-switching checks
+
+57. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py
+    tests/test_phase5_confidence_adaptive.py` after resuming the interrupted
+    implementation.
+
+    Outcome: PASS, 14 tests passed with 8 dependency deprecation warnings in
+    2.74 s. This covered the endpoint regressions, same-shot continuation,
+    mixed policy masks, BP-LSD soft output, and adaptive Knill result fields.
+
+58. `PYTHONPATH=src pytest -q`.
+
+    Outcome: PASS, 39 tests passed with 8 dependency deprecation warnings in
+    4.96 s.
+
+59. The real confidence-threshold smoke test
+    `test_real_cluster_llr_threshold_produces_mixed_short_long_batch`.
+
+    Outcome: PASS as part of entry 57. With BP-LSD cluster LLR confidence and
+    `ClusterLLRPolicy`, the d=3, short-round 1/long-round 3 batch contained
+    both committed-short and continued-long shots.
+
+60. The two-teleportation adaptive Knill smoke test
+    `test_adaptive_knill_endpoints_support_two_teleportations`.
+
+    Outcome: PASS as part of entry 57. AlwaysShort and AlwaysLong both
+    returned `(2, 0)` for d=3 and recorded four events (two bases at each of
+    two teleportation indices).
+
+61. `PYTHONPATH=src python -m compileall -q src tests examples && git diff
+    --check` after documentation and status updates.
+
+    Outcome: PASS. Python compilation and whitespace validation completed
+    successfully.

@@ -1,4 +1,5 @@
 import sys
+import copy
 import stim
 from stimbposd import detector_error_model_to_check_matrices
 import numpy as np
@@ -15,14 +16,18 @@ import time
 from collections import defaultdict
 import json
 import logging
-from hex_qec.decoders import LegacyDecoderAdapter, LegacyDecoderGeneratorAdapter
+from hex_qec.decoders import (
+    DecodeResult,
+    LegacyDecoderAdapter,
+    LegacyDecoderGeneratorAdapter,
+)
 from .results import (
     SimulationDetailLevel,
     SimulationResult,
     normalize_module_decode_output,
     validate_simulation_detail_level,
+    ModuleDecodeResult,
 )
-
 # Just get a logger - don't configure it!
 logger = logging.getLogger(__name__)
 
@@ -101,6 +106,7 @@ class css_detector_module():
                  z_detectors : List[int],
                  new_support : List[int] = [],
                  matchable : bool = True,
+                 confidence_aggregator: Callable[[List[DecodeResult]], ndarray | None] | None = None,
                  ) -> None:
         self.circuit = circuit
         self.num_measurements = circuit.num_measurements
@@ -110,6 +116,7 @@ class css_detector_module():
         self.parity_check_tuple = parity_check_tuple
         self.x_detectors = x_detectors
         self.z_detectors = z_detectors
+        self.confidence_aggregator = confidence_aggregator
 
         self.x_pcm = self.parity_check_tuple[0]
         self.z_pcm = self.parity_check_tuple[1]
@@ -142,6 +149,36 @@ class css_detector_module():
 
         if len(new_support) > 0:
             self.set_support(new_support)
+
+    def __deepcopy__(self, memo):
+        """Copy circuit metadata without copying third-party decoder handles.
+
+        PyMatching and some LDPC decoders own non-pickleable native objects.
+        Decoder instances are immutable in their construction parameters and
+        are only used synchronously by the module callbacks, so sharing the
+        adapted handles preserves the historical template-copy behavior.
+        """
+        clone = object.__new__(type(self))
+        memo[id(self)] = clone
+        shared = {
+            "x_dem_decoder",
+            "z_dem_decoder",
+            "x_decoder",
+            "z_decoder",
+            "x_dem_decode_batch",
+            "z_dem_decode_batch",
+            "x_decode_batch",
+            "z_decode_batch",
+            "c_func",
+            "c_func_rich",
+            "_legacy_c_func",
+        }
+        for name, value in self.__dict__.items():
+            if name in shared:
+                setattr(clone, name, value)
+            else:
+                setattr(clone, name, copy.deepcopy(value, memo))
+        return clone
 
     def _generate_dem(self):
         # Build seperate circuits with the x and z detectors
@@ -206,23 +243,28 @@ class css_detector_module():
             cast_scalar_to_uint8=True,
         )
 
-        def get_batch_decode(decoder: LegacyDecoderAdapter):
-            # Keep this private callable's legacy ndarray return type.  The
-            # richer DecodeResult is available at the adapter boundary.
-            return lambda syndromes: decoder.decode_batch(syndromes).correction
-
-        self.x_dem_decode_batch = get_batch_decode(
-            legacy_factory.create(self.x_dem_check_matrix, weights=self.x_weights)
+        self.x_dem_decoder = legacy_factory.create(
+            self.x_dem_check_matrix, weights=self.x_weights
         )
-        self.z_dem_decode_batch = get_batch_decode(
-            legacy_factory.create(self.z_dem_check_matrix, weights=self.z_weights)
+        self.z_dem_decoder = legacy_factory.create(
+            self.z_dem_check_matrix, weights=self.z_weights
         )
         # These decoders are used move the state back into the all zero syndromes code space.
         # Using a decoder for this may be overkill and just performing the destabilizer corrections may be sufficient.
         # Additionally if the decoder you are using doesn't always perform the destabilizer correction
         # (e.g. in the case of belief propagation not converging) then this will likely be problematic
-        self.x_decode_batch = get_batch_decode(legacy_factory.create(self.x_pcm))
-        self.z_decode_batch = get_batch_decode(legacy_factory.create(self.z_pcm))
+        self.x_decoder = legacy_factory.create(self.x_pcm)
+        self.z_decoder = legacy_factory.create(self.z_pcm)
+
+        def get_batch_decode(decoder: LegacyDecoderAdapter):
+            # Keep this private callable's legacy ndarray return type.  The
+            # richer DecodeResult is available at the adapter boundary.
+            return lambda syndromes: decoder.decode_batch(syndromes).correction
+
+        self.x_dem_decode_batch = get_batch_decode(self.x_dem_decoder)
+        self.z_dem_decode_batch = get_batch_decode(self.z_dem_decoder)
+        self.x_decode_batch = get_batch_decode(self.x_decoder)
+        self.z_decode_batch = get_batch_decode(self.z_decoder)
 
 
         # Generate correction arrays using the template circuit, as the eventual support with not affect the c_func
@@ -340,8 +382,7 @@ class css_detector_module():
             self.z_dem_correction_to_local_detector_flips = gf2_matmul_csc(self.z_dem_hyperedge_to_edge, self.z_dem_correction_to_local_detector_flips)
             self.z_dem_correction_to_local_measurement_flips = gf2_matmul_csc(self.z_dem_hyperedge_to_edge, self.z_dem_correction_to_local_measurement_flips)
 
-        def c_func(measurement_samples: ndarray
-                   ) -> ndarray:
+        def decode_impl(measurement_samples: ndarray) -> tuple[ndarray, list[DecodeResult]]:
 
             x_m2d_converter = self.x_det_circuit.compile_m2d_converter()
             x_detector_flips, x_observable_values = x_m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
@@ -351,8 +392,10 @@ class css_detector_module():
 
             # x_detector_flips = detector_flips[:, self.x_detectors]
             # z_detector_flips = detector_flips[:, self.z_detectors]
-            corrections_for_x_detectors = self.x_dem_decode_batch(x_detector_flips)
-            corrections_for_z_detectors = self.z_dem_decode_batch(z_detector_flips)
+            x_dem_result = self.x_dem_decoder.decode_batch(x_detector_flips)
+            z_dem_result = self.z_dem_decoder.decode_batch(z_detector_flips)
+            corrections_for_x_detectors = x_dem_result.correction
+            corrections_for_z_detectors = z_dem_result.correction
 
             # Need to update the measurements using the detector corrections, before correcting the stabilizers
             measurements_corrections_from_x_detectors = (csr_matrix(corrections_for_x_detectors) @ self.x_dem_correction_to_local_measurement_flips).toarray() % 2
@@ -363,18 +406,62 @@ class css_detector_module():
             # Assume the circuit is alternating X and Z stabilizer measurements
             last_x_stabilizer_measurements = measurement_samples[:, -(self.num_x_stabilizers + self.num_z_stabilizers):-self.num_z_stabilizers]
             last_z_stabilizer_measurements = measurement_samples[:, -self.num_z_stabilizers:]
-            correction_for_x_stabilizers = self.x_decode_batch(last_x_stabilizer_measurements)
-            correction_for_z_stabilizers = self.z_decode_batch(last_z_stabilizer_measurements)
+            x_result = self.x_decoder.decode_batch(last_x_stabilizer_measurements)
+            z_result = self.z_decoder.decode_batch(last_z_stabilizer_measurements)
+            correction_for_x_stabilizers = x_result.correction
+            correction_for_z_stabilizers = z_result.correction
             # logger.info_array_with_partitions(measurement_samples.astype(int), [0, 4, 8, 12, 16, 20])
             # logger.info(last_x_stabilizer_measurements.astype(int))
             # logger.info(correction_for_x_stabilizers)
             # logger.info(last_z_stabilizer_measurements.astype(int))
             # logger.info(correction_for_z_stabilizers)
 
-            combined_corrections = np.hstack([corrections_for_x_detectors, corrections_for_z_detectors, correction_for_x_stabilizers, correction_for_z_stabilizers])
-            return combined_corrections
+            combined_corrections = np.hstack([
+                corrections_for_x_detectors,
+                corrections_for_z_detectors,
+                correction_for_x_stabilizers,
+                correction_for_z_stabilizers,
+            ])
+            return combined_corrections, [
+                x_dem_result,
+                z_dem_result,
+                x_result,
+                z_result,
+            ]
+
+        def c_func(measurement_samples: ndarray) -> ndarray:
+            return decode_impl(measurement_samples)[0]
+
+        def c_func_rich(measurement_samples: ndarray) -> ModuleDecodeResult:
+            combined_corrections, decoder_results = decode_impl(measurement_samples)
+            metrics: dict[str, ndarray] = {}
+            for prefix, result in zip(
+                ("x_dem", "z_dem", "x_capacity", "z_capacity"),
+                decoder_results,
+            ):
+                for name, value in result.metrics.items():
+                    metrics[f"{prefix}.{name}"] = np.asarray(value)
+
+            confidence = None
+            if self.confidence_aggregator is not None:
+                confidence = self.confidence_aggregator(decoder_results)
+                if confidence is not None:
+                    confidence = np.asarray(confidence)
+
+            combined_result = DecodeResult(
+                correction=combined_corrections,
+                confidence=confidence,
+                metrics=metrics,
+            )
+            return ModuleDecodeResult(
+                corrections=combined_corrections,
+                decode_result=combined_result,
+                metrics=metrics,
+            )
 
         self.c_func = c_func
+        self._legacy_c_func = c_func
+        self.c_func_rich = c_func_rich
 
     def _get_pauli_product_from_error_location(self,
                                                circ_err_loc: stim.CircuitErrorLocation,

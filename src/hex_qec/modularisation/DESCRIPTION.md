@@ -109,7 +109,8 @@ Its local detector slice is asserted to equal the DEM check matrix transpose.
 
 Constructor:
 `css_detector_module(circuit, decoder_generator, parity_check_tuple,
-x_detectors, z_detectors, new_support=[], matchable=True)`.
+x_detectors, z_detectors, new_support=[], matchable=True,
+confidence_aggregator=None)`.
 
 The X and Z detector lists must be disjoint and together cover every detector.
 The constructor splits the circuit into X- and Z-detector circuits, builds
@@ -150,6 +151,15 @@ measurement entries.
 DEM and final stabilizer corrections and stores their stacked form as
 `correction_to_measurement_flips`.  This attribute is created by the map
 generation step, not by the constructor alone.
+
+The legacy `c_func` returns only the correction ndarray. `c_func_rich` runs
+the same correction calculation and returns a `ModuleDecodeResult`, retaining
+decoder-specific metrics under namespaced keys such as
+`x_dem.cluster_llr` and `z_dem.cluster_llr`. When supplied, the optional
+`confidence_aggregator` combines the four inner `DecodeResult.confidence`
+arrays into the module-level confidence passed to an adaptive policy. The
+static engine continues using `c_func` and therefore does not consume these
+fields.
 
 ### `logical_measurement_module`
 
@@ -226,9 +236,12 @@ short/long decoders. The short circuit contains initialization and SE rounds
 `long_rounds`; and `long_circuit` contains the complete history used by the
 long decoder. The suffix is checked not to reinitialize data-qubit positions.
 
-These descriptions are not automatically inserted into the existing Knill or
-Steane protocol builders. The diagnostic executor currently supports only
-uniform forced policies, so ordinary protocol workflows remain fixed-round.
+`StatefulAdaptiveStatePrepExecutor` executes mixed masks using independent
+one-shot `stim.FlipSimulator` states. Short shots stop after the short circuit;
+long shots continue their own simulator with the exact extra suffix. The
+selected result is per-shot when a batch contains both choices. The full
+Knill entry point `knill_online_offline_adaptive(...)` composes these events
+for both `|0_L>` and `|+_L>` preparations across multiple teleportations.
 
 ## Gadget constructors and call flow
 
@@ -268,10 +281,12 @@ protocol builder
 The layer depends on Stim, NumPy, SciPy sparse matrices, stimbposd, and (for
 one gadget) PyMatching.  It now has a common decoder result type and legacy
 adapters, but still assumes decoder generators accept the historical
-duck-typed calling convention. There is no confidence-threshold policy or
-mixed adaptive branching. The stateful backend is fixed-round only, and neither backend's
-result wrapper currently collects shot-level records or decoder
-confidence/diagnostics. Several constructors use
+duck-typed calling convention. The original static backend remains fixed-round
+and unchanged. Adaptive execution is an unoptimized per-shot reference path
+and does not compact branches. Its aggregate result records event statistics;
+`detail_level="analysis"` additionally stores confidence, `used_long`, event
+identity, basis, teleportation index, postselection, and final logical-error
+arrays. Several constructors use
 mutable list defaults, support remapping is text-based, and some validation is
 done by printing rather than raising.  Stim's converter treats `uint8` input
 as bit-packed in this installed version; the current engine's boolean arrays

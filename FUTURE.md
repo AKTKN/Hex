@@ -10,7 +10,10 @@ This file records development directions that are expected to become useful afte
 
 # Near future: validate the infrastructure before adding more adaptivity
 
-The first priority after the new stateful backend exists is **not** to add more features.
+The first priority after the new stateful backend exists is **not** to add
+more features.  The fixed-round, forced-endpoint, and two-level confidence
+switching checks are now implemented and recorded in `TEST.md`; the adaptive
+path remains a correctness-first reference implementation.
 
 The immediate sequence should be:
 
@@ -28,9 +31,19 @@ two-level confidence switching
 multiple Knill rounds
 ```
 
+The first five entries are complete for the current reference path.  Multiple
+Knill rounds are covered by the adaptive smoke test, but larger statistical
+validation and performance work remain separate tasks.
+
 Large simulations should wait until the above compatibility checks are documented in `TEST.md`.
 
 # 1. Improve the adaptive execution engine
+
+The current adaptive executor intentionally uses one `FlipSimulator` per shot
+and recomputes correction maps as paths grow.  This makes state continuation
+and software-frame semantics explicit, but is not a production performance
+design.  Optimize only after preserving the endpoint and confidence-switching
+tests.
 
 ## 1.1 Branch compaction
 
@@ -156,6 +169,35 @@ rather than choosing one universal scalar.
 Possible external packages should be integrated only through adapters.
 
 If used later, record exact repository and version in `PLAN.md`/`STATUS.md`.
+
+# 3.1 Circuit-derived priors for code-capacity decoding
+
+The initial BP-LSD integration may use a uniform code-capacity channel: one
+per-data-qubit error probability, supplied through `error_channel` (or the
+equivalent decoder option), with length equal to the code PCM's number of
+columns.  This is a deliberate baseline and should be kept while validating
+the original simulation and result plumbing.
+
+Later, implement an effective code-capacity prior model derived from the
+state-preparation circuit rather than reusing the state-preparation DEM
+priors directly.  The planned approach is:
+
+1. include the destructive data measurement and relevant stabilizer records
+   in an explicit detector model;
+2. convert that DEM into check matrices and fault priors with
+   `detector_error_model_to_check_matrices`;
+3. backpropagate each circuit fault to the data-error variables used by the
+   final code-capacity decoder;
+4. marginalize or otherwise combine faults that induce the same effective
+   data correction variable; and
+5. pass the resulting per-column probabilities to the X/Z code-capacity
+   decoders, with exact axis and basis conventions documented and tested.
+
+The state-preparation DEM priors and the final code-capacity priors must not
+be conflated: they generally have different numbers and meanings of columns.
+The future implementation should expose the decoder role and the effective
+prior source explicitly, while preserving the legacy
+`decoder_generator(check_matrix, weights=...)` interface.
 
 # 4. Post-hoc threshold and policy sweeps
 

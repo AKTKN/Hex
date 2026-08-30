@@ -52,3 +52,30 @@ class AlwaysLongPolicy:
         context: AdaptivePolicyContext,
     ) -> np.ndarray:
         return np.ones(context.batch_size, dtype=bool)
+
+
+class ClusterLLRPolicy:
+    """Continue shots whose BP-LSD cluster-LLR risk exceeds a threshold.
+
+    BP-LSD's cluster LLR is stored in ``DecodeResult.confidence`` by the
+    adapter, but its convention is risk-like: zero means highest confidence.
+    The simulator does not interpret this convention; this policy does.
+    """
+
+    def __init__(self, threshold: float) -> None:
+        self.threshold = threshold
+
+    def should_extend(
+        self,
+        decode_result: DecodeResult | None,
+        *,
+        context: AdaptivePolicyContext,
+    ) -> np.ndarray:
+        if decode_result is None or decode_result.confidence is None:
+            raise ValueError("decode_result.confidence must be provided")
+        confidence = np.asarray(decode_result.confidence, dtype=float)
+        if confidence.shape != (context.batch_size,):
+            raise ValueError(
+                "decode_result.confidence must have shape (batch_size,)"
+            )
+        return confidence > self.threshold

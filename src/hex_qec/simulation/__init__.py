@@ -10,6 +10,7 @@ from .policies import (
     AdaptivePolicyContext,
     AlwaysLongPolicy,
     AlwaysShortPolicy,
+    ClusterLLRPolicy,
 )
 
 __all__ = [
@@ -20,22 +21,30 @@ __all__ = [
     "AdaptivePolicyContext",
     "AlwaysShortPolicy",
     "AlwaysLongPolicy",
+    "ClusterLLRPolicy",
     "AdaptiveStatePrepExecution",
     "StatefulAdaptiveStatePrepExecutor",
+    "StatefulAdaptiveKnillExecutor",
 ]
 
 
 def __getattr__(name):
     """Lazily expose adaptive execution to avoid the package import cycle."""
 
-    if name in {"AdaptiveStatePrepExecution", "StatefulAdaptiveStatePrepExecutor"}:
+    if name in {
+        "AdaptiveStatePrepExecution",
+        "StatefulAdaptiveStatePrepExecutor",
+        "StatefulAdaptiveKnillExecutor",
+    }:
         from .adaptive import (
             AdaptiveStatePrepExecution,
+            StatefulAdaptiveKnillExecutor,
             StatefulAdaptiveStatePrepExecutor,
         )
 
         return {
             "AdaptiveStatePrepExecution": AdaptiveStatePrepExecution,
+            "StatefulAdaptiveKnillExecutor": StatefulAdaptiveKnillExecutor,
             "StatefulAdaptiveStatePrepExecutor": StatefulAdaptiveStatePrepExecutor,
         }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

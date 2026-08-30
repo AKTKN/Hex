@@ -1,2 +1,2 @@
-from .knill_online_offline import knill_online_offline
+from .knill_online_offline import knill_online_offline, knill_online_offline_adaptive
 from .steane_online_offline import steane_online_offline

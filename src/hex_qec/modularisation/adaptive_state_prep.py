@@ -70,8 +70,26 @@ class AdaptiveStatePrepModule:
         return self.short_module.c_func
 
     @property
+    def short_rich_decoder(self) -> Callable[[np.ndarray], object]:
+        if (
+            hasattr(self.short_module, "_legacy_c_func")
+            and self.short_module.c_func is not self.short_module._legacy_c_func
+        ):
+            return self.short_module.c_func
+        return getattr(self.short_module, "c_func_rich", self.short_module.c_func)
+
+    @property
     def long_decoder(self) -> Callable[[np.ndarray], object]:
         return self.long_module.c_func
+
+    @property
+    def long_rich_decoder(self) -> Callable[[np.ndarray], object]:
+        if (
+            hasattr(self.long_module, "_legacy_c_func")
+            and self.long_module.c_func is not self.long_module._legacy_c_func
+        ):
+            return self.long_module.c_func
+        return getattr(self.long_module, "c_func_rich", self.long_module.c_func)
 
 
 def _detector_partition(
@@ -171,6 +189,7 @@ def generate_adaptive_state_prep_modules(
     surface_code: bool = False,
     event_id_prefix: str | None = None,
     teleportation_index: int | None = None,
+    confidence_aggregator: Callable[[list[object]], ndarray | None] | None = None,
 ) -> list[AdaptiveStatePrepModule]:
     """Build adaptive descriptions for one or more encoded-block supports."""
 
@@ -195,6 +214,7 @@ def generate_adaptive_state_prep_modules(
         short_x,
         short_z,
         matchable=matchable,
+        confidence_aggregator=confidence_aggregator,
     )
     long_template = css_detector_module(
         long_local,
@@ -203,6 +223,7 @@ def generate_adaptive_state_prep_modules(
         long_x,
         long_z,
         matchable=matchable,
+        confidence_aggregator=confidence_aggregator,
     )
 
     modules: list[AdaptiveStatePrepModule] = []
@@ -241,6 +262,7 @@ def generate_adaptive_state_prep_module(
     surface_code: bool = False,
     event_id: str | None = None,
     teleportation_index: int | None = None,
+    confidence_aggregator: Callable[[list[object]], ndarray | None] | None = None,
 ) -> AdaptiveStatePrepModule:
     """Build one adaptive state-preparation description."""
 
@@ -255,4 +277,5 @@ def generate_adaptive_state_prep_module(
         surface_code=surface_code,
         event_id_prefix=event_id,
         teleportation_index=teleportation_index,
+        confidence_aggregator=confidence_aggregator,
     )[0]

@@ -6,6 +6,8 @@ from .adapters import (
     LegacyDecoderGeneratorAdapter,
     adapt_decoder_generator,
     coerce_decode_result,
+    HexBPLSDDecoder,
+    make_bplsd_decoder_generator,
 )
 
 __all__ = [
@@ -16,4 +18,6 @@ __all__ = [
     "LegacyDecoderGeneratorAdapter",
     "adapt_decoder_generator",
     "coerce_decode_result",
+    "HexBPLSDDecoder",
+    "make_bplsd_decoder_generator",
 ]

@@ -132,7 +132,7 @@ def test_always_long_continues_same_shot_and_decodes_full_history():
     )
 
 
-def test_mixed_policy_mask_is_explicitly_deferred_to_branching_phase():
+def test_mixed_policy_mask_executes_exact_per_shot_continuations():
     description, _ = make_adaptive_state_prep()
 
     class MixedPolicy:
@@ -140,10 +140,17 @@ def test_mixed_policy_mask_is_explicitly_deferred_to_branching_phase():
             return np.arange(context.batch_size) % 2 == 1
 
     description.schedule = AdaptiveSERounds(1, 3, MixedPolicy())
-    with pytest.raises(NotImplementedError, match="mixed short/long"):
-        StatefulAdaptiveStatePrepExecutor().execute(
-            description, batch_size=4, seed=15
-        )
+    execution = StatefulAdaptiveStatePrepExecutor().execute(
+        description, batch_size=4, seed=15
+    )
+
+    np.testing.assert_array_equal(execution.used_long, [False, True, False, True])
+    assert execution.selected_result is None
+    assert execution.selected_results is not None
+    assert isinstance(execution.selected_measurements, list)
+    assert len(execution.selected_measurements) == 4
+    assert execution.selected_measurements[0].shape == (8,)
+    assert execution.selected_measurements[1].shape == (24,)
 
 
 @pytest.mark.parametrize("pauli", ["x", "z"])
