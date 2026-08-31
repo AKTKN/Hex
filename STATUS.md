@@ -376,3 +376,48 @@ the requested production defaults: distances 5/7, physical errors
 Added `--verbose` progress reporting to both runners. Messages are flushed
 immediately and include point number, parameters, seed, workflow completion,
 runtime, checkpoint status, and adaptive fallback statistics.
+
+## Adaptive wall-time profiling
+
+Date: 2026-08-31
+
+Added the opt-in lightweight profiler in `src/hex_qec/simulation/profiling.py`
+and the dedicated runner under `profiling/`. The runner records setup,
+warm-up, and measured phases separately using `perf_counter_ns`; the adaptive
+executor remains one-shot and no optimization, batching change, decoder
+change, or simulator algorithm change was made. It records physical short and
+long continuation, reconstruction, correction-map cache hits/misses and
+generation, `reference_sample`, decoder sub-stages, policy decisions,
+correction commits, downstream Knill modules, and result bookkeeping.
+
+The requested profile was run with distance 5, physical error 0.003,
+short/long rounds 1/5, one teleportation, `pauli="z"`, surface-code ordering,
+BP-LSD (`max_iter=30`, `bp_method="minimum_sum"`, `lsd_method="LSD_0"`,
+`lsd_order=0`, `always_run_lsd=True`), DEM-only confidence aggregation,
+`AlwaysLongPolicy`, seed 1234, one warm-up shot, five measured shots, and
+`batch_size=1`. Mean measured end-to-end time was 0.181446721 s/shot;
+measured logical errors were 0/5. The non-overlapping report stages accounted
+for 86.14% of measured wall time, leaving 13.86% as explicit other/
+uninstrumented time. The largest inclusive diagnostic was correction-map
+generation at 0.618240641 s total (30 misses), while `reference_sample()`
+was called 35 times for 0.007417561 s total. Downstream Knill processing was
+0.452209777 s total (49.84%), state-preparation measurement/reference/
+correction processing was 0.192014948 s (21.16%), adaptive state-prep
+physical execution was 0.119472667 s (13.17%), decoder work was 0.018326952 s
+(2.02%), and policy/control was 0.01%.
+
+The report suggests measuring/shared deterministic correction maps first,
+then reference-sample reuse if confirmed across broader runs. These are
+recorded opportunities only; they were not implemented. A d=3 two-shot
+`AlwaysLongPolicy` smoke profile and a d=3 two-shot `ClusterLLRPolicy` profile
+also completed successfully. The new profiling tests and full suite pass.
+
+## Open issue / next action
+
+The current report's top-level downstream stage is intentionally inclusive of
+its measurement reconstruction and software-frame work, while the detailed
+`corrected_measurements.*` and decoder rows are inclusive diagnostics. Keep
+these accounting conventions explicit when comparing future profiles. The
+next action is to review the measured bottleneck ranking before requesting any
+optimization; no optimization should be made as part of this profiling
+checkpoint.

@@ -3,6 +3,18 @@
 This package contains the Phase 3 stateful fixed-round backend and the
 stateful two-level adaptive state-preparation/Knill execution paths.
 
+## Opt-in wall-time instrumentation
+
+`WallTimeProfiler` and `TimingEvent` in `hex_qec.simulation.profiling` provide
+an inert-by-default integration point for the dedicated
+`profiling.adaptive_walltime_profile` runner. The adaptive Knill entry point
+accepts optional `profiler` and `warmup_shots` arguments for this runner;
+when omitted, no timing clock is read and execution semantics are unchanged.
+The recorder uses `perf_counter_ns`, keeps setup/warm-up/measured contexts
+separate, and records inclusive sections. It does not cache circuits or
+maps, add simulator calls, alter decoder inputs, or change the adaptive
+policy workflow.
+
 ## Policies
 
 `AdaptivePolicy` is a `Protocol` whose `should_extend(...)` method receives a

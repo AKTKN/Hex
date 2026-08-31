@@ -1,5 +1,6 @@
 import sys
 import copy
+from contextlib import nullcontext
 import stim
 from stimbposd import detector_error_model_to_check_matrices
 import numpy as np
@@ -108,6 +109,7 @@ class css_detector_module():
                  new_support : List[int] = [],
                  matchable : bool = True,
                  confidence_aggregator: Callable[[CSSInnerDecodeResults], ndarray | None] | None = None,
+                 profiler: Any = None,
                  ) -> None:
         self.circuit = circuit
         self.num_measurements = circuit.num_measurements
@@ -118,6 +120,7 @@ class css_detector_module():
         self.x_detectors = x_detectors
         self.z_detectors = z_detectors
         self.confidence_aggregator = confidence_aggregator
+        self.profiler = profiler
 
         self.x_pcm = self.parity_check_tuple[0]
         self.z_pcm = self.parity_check_tuple[1]
@@ -148,6 +151,11 @@ class css_detector_module():
         self._generate_dem()
         self._generate_c_func()
 
+    def _profile_section(self, name: str):
+        if self.profiler is None:
+            return nullcontext()
+        return self.profiler.section(name)
+
         if len(new_support) > 0:
             self.set_support(new_support)
 
@@ -173,6 +181,7 @@ class css_detector_module():
             "c_func",
             "c_func_rich",
             "_legacy_c_func",
+            "profiler",
         }
         for name, value in self.__dict__.items():
             if name in shared:
@@ -208,10 +217,15 @@ class css_detector_module():
         #     lambda dem_instr: str(dem_instr),
         #     list(filter(self.z_det_filter_function, self.dem))
         # ))))
-        self.x_dem = self.x_det_circuit.detector_error_model()
-        self.z_dem = self.z_det_circuit.detector_error_model()
-        self.x_dem_data = detector_error_model_to_check_matrices(self.x_dem, allow_undecomposed_hyperedges=True)
-        self.z_dem_data = detector_error_model_to_check_matrices(self.z_dem, allow_undecomposed_hyperedges=True)
+        with self._profile_section("dem_construction"):
+            self.x_dem = self.x_det_circuit.detector_error_model()
+            self.z_dem = self.z_det_circuit.detector_error_model()
+            self.x_dem_data = detector_error_model_to_check_matrices(
+                self.x_dem, allow_undecomposed_hyperedges=True
+            )
+            self.z_dem_data = detector_error_model_to_check_matrices(
+                self.z_dem, allow_undecomposed_hyperedges=True
+            )
 
         # Convert DEMs to check matrices
         if self.matchable:
@@ -244,18 +258,19 @@ class css_detector_module():
             cast_scalar_to_uint8=True,
         )
 
-        self.x_dem_decoder = legacy_factory.create(
-            self.x_dem_check_matrix, weights=self.x_weights
-        )
-        self.z_dem_decoder = legacy_factory.create(
-            self.z_dem_check_matrix, weights=self.z_weights
-        )
-        # These decoders are used move the state back into the all zero syndromes code space.
-        # Using a decoder for this may be overkill and just performing the destabilizer corrections may be sufficient.
-        # Additionally if the decoder you are using doesn't always perform the destabilizer correction
-        # (e.g. in the case of belief propagation not converging) then this will likely be problematic
-        self.x_decoder = legacy_factory.create(self.x_pcm)
-        self.z_decoder = legacy_factory.create(self.z_pcm)
+        with self._profile_section("decoder_construction"):
+            self.x_dem_decoder = legacy_factory.create(
+                self.x_dem_check_matrix, weights=self.x_weights
+            )
+            self.z_dem_decoder = legacy_factory.create(
+                self.z_dem_check_matrix, weights=self.z_weights
+            )
+            # These decoders are used move the state back into the all zero syndromes code space.
+            # Using a decoder for this may be overkill and just performing the destabilizer corrections may be sufficient.
+            # Additionally if the decoder you are using doesn't always perform the destabilizer correction
+            # (e.g. in the case of belief propagation not converging) then this will likely be problematic
+            self.x_decoder = legacy_factory.create(self.x_pcm)
+            self.z_decoder = legacy_factory.create(self.z_pcm)
 
         def get_batch_decode(decoder: LegacyDecoderAdapter):
             # Keep this private callable's legacy ndarray return type.  The
@@ -269,24 +284,25 @@ class css_detector_module():
 
 
         # Generate correction arrays using the template circuit, as the eventual support with not affect the c_func
-        x_correction_array = []
-        z_correction_array = []
-        for pauli_dem, circuit in [(self.x_dem, self.x_det_circuit), (self.z_dem, self.z_det_circuit)]:
-            circuit_explain_errors = circuit.explain_detector_error_model_errors(
-                dem_filter = pauli_dem,
-                reduce_to_one_representative_error=True,
-            )
-            for explained_error in circuit_explain_errors:
-                # Get location of fault
-                error_location = explained_error.circuit_error_locations[0]
-                stack_frame = error_location.stack_frames[0]
-                instruction_offset = stack_frame.instruction_offset
-                # Get Pauli of fault
-                pauli_fault = self._get_pauli_product_from_error_location(error_location, circuit.num_qubits)
-                if pauli_dem == self.x_dem:
-                    x_correction_array.append((pauli_fault, instruction_offset))
-                else:
-                    z_correction_array.append((pauli_fault, instruction_offset))
+        with self._profile_section("correction_array_construction"):
+            x_correction_array = []
+            z_correction_array = []
+            for pauli_dem, circuit in [(self.x_dem, self.x_det_circuit), (self.z_dem, self.z_det_circuit)]:
+                circuit_explain_errors = circuit.explain_detector_error_model_errors(
+                    dem_filter = pauli_dem,
+                    reduce_to_one_representative_error=True,
+                )
+                for explained_error in circuit_explain_errors:
+                    # Get location of fault
+                    error_location = explained_error.circuit_error_locations[0]
+                    stack_frame = error_location.stack_frames[0]
+                    instruction_offset = stack_frame.instruction_offset
+                    # Get Pauli of fault
+                    pauli_fault = self._get_pauli_product_from_error_location(error_location, circuit.num_qubits)
+                    if pauli_dem == self.x_dem:
+                        x_correction_array.append((pauli_fault, instruction_offset))
+                    else:
+                        z_correction_array.append((pauli_fault, instruction_offset))
 
 
         # Calculate correction maps for just the measurements in this module
@@ -385,30 +401,37 @@ class css_detector_module():
 
         def decode_impl(measurement_samples: ndarray) -> tuple[ndarray, CSSInnerDecodeResults]:
 
-            x_m2d_converter = self.x_det_circuit.compile_m2d_converter()
-            x_detector_flips, x_observable_values = x_m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
-            z_m2d_converter = self.z_det_circuit.compile_m2d_converter()
-            z_detector_flips, z_observable_values = z_m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
+            with self._profile_section("measurement_to_detector.x"):
+                x_m2d_converter = self.x_det_circuit.compile_m2d_converter()
+                x_detector_flips, x_observable_values = x_m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
+            with self._profile_section("measurement_to_detector.z"):
+                z_m2d_converter = self.z_det_circuit.compile_m2d_converter()
+                z_detector_flips, z_observable_values = z_m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
 
 
             # x_detector_flips = detector_flips[:, self.x_detectors]
             # z_detector_flips = detector_flips[:, self.z_detectors]
-            x_dem_result = self.x_dem_decoder.decode_batch(x_detector_flips)
-            z_dem_result = self.z_dem_decoder.decode_batch(z_detector_flips)
+            with self._profile_section("x_dem"):
+                x_dem_result = self.x_dem_decoder.decode_batch(x_detector_flips)
+            with self._profile_section("z_dem"):
+                z_dem_result = self.z_dem_decoder.decode_batch(z_detector_flips)
             corrections_for_x_detectors = x_dem_result.correction
             corrections_for_z_detectors = z_dem_result.correction
 
             # Need to update the measurements using the detector corrections, before correcting the stabilizers
-            measurements_corrections_from_x_detectors = (csr_matrix(corrections_for_x_detectors) @ self.x_dem_correction_to_local_measurement_flips).toarray() % 2
-            measurements_corrections_from_z_detectors = (csr_matrix(corrections_for_z_detectors) @ self.z_dem_correction_to_local_measurement_flips).toarray() % 2
-            measurement_samples = (measurement_samples + measurements_corrections_from_x_detectors) % 2
-            measurement_samples = (measurement_samples + measurements_corrections_from_z_detectors) % 2
+            with self._profile_section("measurement_history_correction"):
+                measurements_corrections_from_x_detectors = (csr_matrix(corrections_for_x_detectors) @ self.x_dem_correction_to_local_measurement_flips).toarray() % 2
+                measurements_corrections_from_z_detectors = (csr_matrix(corrections_for_z_detectors) @ self.z_dem_correction_to_local_measurement_flips).toarray() % 2
+                measurement_samples = (measurement_samples + measurements_corrections_from_x_detectors) % 2
+                measurement_samples = (measurement_samples + measurements_corrections_from_z_detectors) % 2
 
             # Assume the circuit is alternating X and Z stabilizer measurements
             last_x_stabilizer_measurements = measurement_samples[:, -(self.num_x_stabilizers + self.num_z_stabilizers):-self.num_z_stabilizers]
             last_z_stabilizer_measurements = measurement_samples[:, -self.num_z_stabilizers:]
-            x_result = self.x_decoder.decode_batch(last_x_stabilizer_measurements)
-            z_result = self.z_decoder.decode_batch(last_z_stabilizer_measurements)
+            with self._profile_section("x_capacity"):
+                x_result = self.x_decoder.decode_batch(last_x_stabilizer_measurements)
+            with self._profile_section("z_capacity"):
+                z_result = self.z_decoder.decode_batch(last_z_stabilizer_measurements)
             correction_for_x_stabilizers = x_result.correction
             correction_for_z_stabilizers = z_result.correction
             # logger.info_array_with_partitions(measurement_samples.astype(int), [0, 4, 8, 12, 16, 20])
@@ -448,7 +471,8 @@ class css_detector_module():
 
             confidence = None
             if self.confidence_aggregator is not None:
-                confidence = self.confidence_aggregator(decoder_results)
+                with self._profile_section("confidence_aggregation"):
+                    confidence = self.confidence_aggregator(decoder_results)
                 if confidence is not None:
                     confidence = np.asarray(confidence)
 

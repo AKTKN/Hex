@@ -12,6 +12,7 @@ from .policies import (
     AlwaysShortPolicy,
     ClusterLLRPolicy,
 )
+from .profiling import WallTimeProfiler, TimingEvent
 
 __all__ = [
     "StatefulFlipSimulatorBackend",
@@ -22,6 +23,8 @@ __all__ = [
     "AlwaysShortPolicy",
     "AlwaysLongPolicy",
     "ClusterLLRPolicy",
+    "WallTimeProfiler",
+    "TimingEvent",
     "AdaptiveStatePrepExecution",
     "StatefulAdaptiveStatePrepExecutor",
     "StatefulAdaptiveKnillExecutor",

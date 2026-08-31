@@ -1,5 +1,6 @@
 """Stateful two-level adaptive state-preparation execution."""
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any, Sequence
 
@@ -23,6 +24,14 @@ from hex_qec.modularisation.results import (
 )
 from .policies import AdaptivePolicyContext
 from .stateful import reconstruct_measurement_records
+
+
+def _profile_section(profiler: Any, name: str, *, absolute: bool = True):
+    """Return an opt-in timing context without coupling execution to it."""
+
+    if profiler is None:
+        return nullcontext()
+    return profiler.section(name, absolute=absolute)
 
 
 @dataclass
@@ -295,7 +304,8 @@ class _CorrectionEvent:
 class _AdaptiveShotRunner:
     """Unoptimized one-shot executor used by the adaptive protocol path."""
 
-    def __init__(self, *, seed: int | None) -> None:
+    def __init__(self, *, seed: int | None, profiler: Any = None) -> None:
+        self.profiler = profiler
         self.simulator = stim.FlipSimulator(
             batch_size=1,
             disable_stabilizer_randomization=False,
@@ -337,26 +347,37 @@ class _AdaptiveShotRunner:
     def _correction_maps(self, units: Sequence[Any]) -> list[Any | None]:
         key = tuple(id(unit) for unit in units)
         if key in self._map_cache:
+            with _profile_section(
+                self.profiler, "correction_map.cache_hit"
+            ):
+                pass
             return self._map_cache[key]
 
+        # Keep hit/miss counters separate from generation time.  The miss
+        # marker is intentionally tiny; the actual deterministic work is
+        # measured by the sibling ``generate`` section below.
+        with _profile_section(self.profiler, "correction_map.cache_miss"):
+            pass
+
         maps: list[Any | None] = []
-        previous_detectors = 0
-        for index, module in enumerate(units):
-            before = self._noise_free_circuit_for_units(units[:index])
-            after = self._noise_free_circuit_for_units(units[index + 1 :])
-            if isinstance(module, measurement_module):
-                module.generate_measurement_flip_map(before, after)
-                maps.append(module.correction_to_measurement_flips)
-            elif isinstance(module, (detector_module, css_detector_module)):
-                module.generate_measurement_flip_map(
-                    before,
-                    after,
-                    previous_detectors,
-                )
-                maps.append(module.correction_to_measurement_flips)
-            else:
-                maps.append(None)
-            previous_detectors += module.num_detectors
+        with _profile_section(self.profiler, "correction_map.generate"):
+            previous_detectors = 0
+            for index, module in enumerate(units):
+                before = self._noise_free_circuit_for_units(units[:index])
+                after = self._noise_free_circuit_for_units(units[index + 1 :])
+                if isinstance(module, measurement_module):
+                    module.generate_measurement_flip_map(before, after)
+                    maps.append(module.correction_to_measurement_flips)
+                elif isinstance(module, (detector_module, css_detector_module)):
+                    module.generate_measurement_flip_map(
+                        before,
+                        after,
+                        previous_detectors,
+                    )
+                    maps.append(module.correction_to_measurement_flips)
+                else:
+                    maps.append(None)
+                previous_detectors += module.num_detectors
         self._map_cache[key] = maps
         return maps
 
@@ -368,12 +389,25 @@ class _AdaptiveShotRunner:
     ) -> np.ndarray:
         physical_units = self.physical_units if physical_units is None else physical_units
         logical_units = self.units if logical_units is None else logical_units
-        circuit = self._circuit_for_units(physical_units)
-        flips = self.simulator.get_measurement_flips()
-        measurements = reconstruct_measurement_records(
-            np.asarray(circuit.reference_sample(), dtype=bool),
-            flips,
-        )[0]
+        with _profile_section(
+            self.profiler, "corrected_measurements.circuit_assembly"
+        ):
+            circuit = self._circuit_for_units(physical_units)
+        with _profile_section(
+            self.profiler, "corrected_measurements.get_measurement_flips"
+        ):
+            flips = self.simulator.get_measurement_flips()
+        with _profile_section(
+            self.profiler, "corrected_measurements.reference_sample"
+        ):
+            reference_sample = np.asarray(circuit.reference_sample(), dtype=bool)
+        with _profile_section(
+            self.profiler, "corrected_measurements.reconstruct"
+        ):
+            measurements = reconstruct_measurement_records(
+                reference_sample,
+                flips,
+            )[0]
         logical_length = self._measurement_count(logical_units)
         if logical_length != measurements.shape[0]:
             raise RuntimeError(
@@ -387,18 +421,24 @@ class _AdaptiveShotRunner:
         if len(permutation) != logical_length:
             raise RuntimeError("measurement permutation has the wrong length")
         software_flips = np.zeros(measurements.shape, dtype=bool)
-        maps = self._correction_maps(logical_units)
-        for correction_event in self.correction_events:
-            correction_map = maps[correction_event.unit_index]
-            if correction_map is None:
-                continue
-            correction = np.asarray(correction_event.corrections).reshape(1, -1)
-            logical_updates = (
-                csc_matrix(correction) @ correction_map
-            ).toarray()[0] % 2
-            physical_updates = np.zeros(measurements.shape, dtype=bool)
-            physical_updates[np.asarray(permutation)] = logical_updates.astype(bool)
-            software_flips ^= physical_updates
+        with _profile_section(
+            self.profiler, "corrected_measurements.correction_maps"
+        ):
+            maps = self._correction_maps(logical_units)
+        with _profile_section(
+            self.profiler, "corrected_measurements.software_frame"
+        ):
+            for correction_event in self.correction_events:
+                correction_map = maps[correction_event.unit_index]
+                if correction_map is None:
+                    continue
+                correction = np.asarray(correction_event.corrections).reshape(1, -1)
+                logical_updates = (
+                    csc_matrix(correction) @ correction_map
+                ).toarray()[0] % 2
+                physical_updates = np.zeros(measurements.shape, dtype=bool)
+                physical_updates[np.asarray(permutation)] = logical_updates.astype(bool)
+                software_flips ^= physical_updates
         return np.logical_xor(measurements, software_flips)
 
     def _append_unit(self, module: Any, result: ModuleDecodeResult) -> None:
@@ -451,27 +491,31 @@ class _AdaptiveShotRunner:
         description: AdaptiveStatePrepModule,
     ) -> None:
         previous_measurements = self._measurement_count(self.physical_units)
-        self.simulator.do(description.short_circuit)
+        with _profile_section(self.profiler, "shot.physical.short.total"):
+            with _profile_section(self.profiler, "shot.physical.short.zero"):
+                self.simulator.do(description.short_circuit)
         self.physical_units.append(description.short_module)
-        short_measurements = self._corrected_measurements(
-            logical_units=self.units + [description.short_module],
-            measurement_permutation=(
-                self.measurement_permutation
-                + list(
-                    range(
-                        previous_measurements,
-                        previous_measurements + description.short_module.num_measurements,
+        with _profile_section(self.profiler, "shot.reconstruction.short"):
+            short_measurements = self._corrected_measurements(
+                logical_units=self.units + [description.short_module],
+                measurement_permutation=(
+                    self.measurement_permutation
+                    + list(
+                        range(
+                            previous_measurements,
+                            previous_measurements + description.short_module.num_measurements,
+                        )
                     )
-                )
-            ),
-        )
+                ),
+            )
         short_local = short_measurements[
             previous_measurements : previous_measurements
             + description.short_module.num_measurements
         ]
-        short_result = normalize_module_decode_output(
-            description.short_rich_decoder(short_local.reshape(1, -1))
-        )
+        with _profile_section(self.profiler, "shot.decode.short.zero"):
+            short_result = normalize_module_decode_output(
+                description.short_rich_decoder(short_local.reshape(1, -1))
+            )
         short_decode = short_result.decode_result or DecodeResult(
             correction=short_result.corrections
         )
@@ -481,45 +525,50 @@ class _AdaptiveShotRunner:
             teleportation_index=description.teleportation_index,
             state_basis=description.state_basis,
         )
-        extend = np.asarray(
-            description.schedule.policy.should_extend(
-                short_decode,
-                context=context,
-            ),
-            dtype=bool,
-        )
+        with _profile_section(self.profiler, "shot.policy.zero"):
+            extend = np.asarray(
+                description.schedule.policy.should_extend(
+                    short_decode,
+                    context=context,
+                ),
+                dtype=bool,
+            )
         if extend.shape != (1,):
             raise ValueError("adaptive policy must return one boolean per shot")
 
         if bool(extend[0]):
             extra_circuit = _without_detectors(description.extra_circuit)
-            self.simulator.do(extra_circuit)
+            with _profile_section(self.profiler, "shot.physical.long.total"):
+                with _profile_section(self.profiler, "shot.physical.long.zero"):
+                    self.simulator.do(extra_circuit)
             self.physical_units.append(
                 _PhysicalSegment(
                     extra_circuit,
                     extra_circuit.num_measurements,
                 )
             )
-            long_measurements = self._corrected_measurements(
-                logical_units=self.units + [description.long_module],
-                measurement_permutation=(
-                    self.measurement_permutation
-                    + list(
-                        range(
-                            previous_measurements,
-                            previous_measurements
-                            + description.long_module.num_measurements,
+            with _profile_section(self.profiler, "shot.reconstruction.long"):
+                long_measurements = self._corrected_measurements(
+                    logical_units=self.units + [description.long_module],
+                    measurement_permutation=(
+                        self.measurement_permutation
+                        + list(
+                            range(
+                                previous_measurements,
+                                previous_measurements
+                                + description.long_module.num_measurements,
+                            )
                         )
-                    )
-                ),
-            )
+                    ),
+                )
             long_local = long_measurements[
                 previous_measurements : previous_measurements
                 + description.long_module.num_measurements
             ]
-            selected_result = normalize_module_decode_output(
-                description.long_rich_decoder(long_local.reshape(1, -1))
-            )
+            with _profile_section(self.profiler, "shot.decode.long.zero"):
+                selected_result = normalize_module_decode_output(
+                    description.long_rich_decoder(long_local.reshape(1, -1))
+                )
             selected_module = description.long_module
         else:
             selected_result = short_result
@@ -530,17 +579,19 @@ class _AdaptiveShotRunner:
             if short_decode.confidence is not None
             else None
         )
-        self.event_observations.append(
-            AdaptiveEventObservation(
-                event_id=description.event_id,
-                teleportation_index=description.teleportation_index,
-                state_basis=description.state_basis,
-                confidence=confidence,
-                used_long=bool(extend[0]),
-                would_extend=bool(extend[0]),
+        with _profile_section(self.profiler, "shot.result.bookkeeping"):
+            self.event_observations.append(
+                AdaptiveEventObservation(
+                    event_id=description.event_id,
+                    teleportation_index=description.teleportation_index,
+                    state_basis=description.state_basis,
+                    confidence=confidence,
+                    used_long=bool(extend[0]),
+                    would_extend=bool(extend[0]),
+                )
             )
-        )
-        self._commit_logical_unit(selected_module, selected_result)
+        with _profile_section(self.profiler, "shot.state_prep.correction_commit"):
+            self._commit_logical_unit(selected_module, selected_result)
 
     def _run_adaptive_pair(
         self,
@@ -556,13 +607,15 @@ class _AdaptiveShotRunner:
         """
 
         previous_measurements = self._measurement_count(self.physical_units)
-        self.simulator.do(z_description.short_circuit)
-        self.physical_units.append(z_description.short_module)
-        z_short_count = z_description.short_module.num_measurements
-
-        self.simulator.do(x_description.short_circuit)
-        self.physical_units.append(x_description.short_module)
-        x_short_count = x_description.short_module.num_measurements
+        with _profile_section(self.profiler, "shot.physical.short.total"):
+            with _profile_section(self.profiler, "shot.physical.short.zero"):
+                self.simulator.do(z_description.short_circuit)
+            self.physical_units.append(z_description.short_module)
+            z_short_count = z_description.short_module.num_measurements
+            with _profile_section(self.profiler, "shot.physical.short.plus"):
+                self.simulator.do(x_description.short_circuit)
+            self.physical_units.append(x_description.short_module)
+            x_short_count = x_description.short_module.num_measurements
 
         short_logical_units = self.units + [
             z_description.short_module,
@@ -574,10 +627,11 @@ class _AdaptiveShotRunner:
                 previous_measurements + z_short_count + x_short_count,
             )
         )
-        short_measurements = self._corrected_measurements(
-            logical_units=short_logical_units,
-            measurement_permutation=short_permutation,
-        )
+        with _profile_section(self.profiler, "shot.reconstruction.short"):
+            short_measurements = self._corrected_measurements(
+                logical_units=short_logical_units,
+                measurement_permutation=short_permutation,
+            )
         z_short_local = short_measurements[
             previous_measurements : previous_measurements + z_short_count
         ]
@@ -588,12 +642,14 @@ class _AdaptiveShotRunner:
             + x_short_count
         ]
 
-        z_short_result = normalize_module_decode_output(
-            z_description.short_rich_decoder(z_short_local.reshape(1, -1))
-        )
-        x_short_result = normalize_module_decode_output(
-            x_description.short_rich_decoder(x_short_local.reshape(1, -1))
-        )
+        with _profile_section(self.profiler, "shot.decode.short.zero"):
+            z_short_result = normalize_module_decode_output(
+                z_description.short_rich_decoder(z_short_local.reshape(1, -1))
+            )
+        with _profile_section(self.profiler, "shot.decode.short.plus"):
+            x_short_result = normalize_module_decode_output(
+                x_description.short_rich_decoder(x_short_local.reshape(1, -1))
+            )
         z_short_decode = z_short_result.decode_result or DecodeResult(
             correction=z_short_result.corrections
         )
@@ -632,25 +688,31 @@ class _AdaptiveShotRunner:
         # convention into the pair-level executor. `pair_risk`, computed
         # below from confidence alone, is diagnostic metadata only and must
         # never feed back into this decision.
-        z_would_extend = policy_decision(z_description, z_short_decode)
-        x_would_extend = policy_decision(x_description, x_short_decode)
-        extend_pair = z_would_extend or x_would_extend
+        with _profile_section(self.profiler, "shot.policy.zero"):
+            z_would_extend = policy_decision(z_description, z_short_decode)
+        with _profile_section(self.profiler, "shot.policy.plus"):
+            x_would_extend = policy_decision(x_description, x_short_decode)
+        with _profile_section(self.profiler, "shot.policy.synchronized_or"):
+            extend_pair = z_would_extend or x_would_extend
 
         if extend_pair:
             z_extra_circuit = _without_detectors(z_description.extra_circuit)
-            self.simulator.do(z_extra_circuit)
-            z_extra = _PhysicalSegment(
-                z_extra_circuit,
-                z_extra_circuit.num_measurements,
-            )
-            self.physical_units.append(z_extra)
-            x_extra_circuit = _without_detectors(x_description.extra_circuit)
-            self.simulator.do(x_extra_circuit)
-            x_extra = _PhysicalSegment(
-                x_extra_circuit,
-                x_extra_circuit.num_measurements,
-            )
-            self.physical_units.append(x_extra)
+            with _profile_section(self.profiler, "shot.physical.long.total"):
+                with _profile_section(self.profiler, "shot.physical.long.zero"):
+                    self.simulator.do(z_extra_circuit)
+                z_extra = _PhysicalSegment(
+                    z_extra_circuit,
+                    z_extra_circuit.num_measurements,
+                )
+                self.physical_units.append(z_extra)
+                x_extra_circuit = _without_detectors(x_description.extra_circuit)
+                with _profile_section(self.profiler, "shot.physical.long.plus"):
+                    self.simulator.do(x_extra_circuit)
+                x_extra = _PhysicalSegment(
+                    x_extra_circuit,
+                    x_extra_circuit.num_measurements,
+                )
+                self.physical_units.append(x_extra)
 
             z_extra_start = previous_measurements + z_short_count + x_short_count
             x_extra_start = z_extra_start + z_extra.num_measurements
@@ -663,10 +725,11 @@ class _AdaptiveShotRunner:
                 z_description.long_module,
                 x_description.long_module,
             ]
-            long_measurements = self._corrected_measurements(
-                logical_units=long_logical_units,
-                measurement_permutation=long_permutation,
-            )
+            with _profile_section(self.profiler, "shot.reconstruction.long"):
+                long_measurements = self._corrected_measurements(
+                    logical_units=long_logical_units,
+                    measurement_permutation=long_permutation,
+                )
             z_long_local = np.concatenate(
                 [
                     long_measurements[
@@ -688,12 +751,14 @@ class _AdaptiveShotRunner:
                     ],
                 ]
             )
-            z_result = normalize_module_decode_output(
-                z_description.long_rich_decoder(z_long_local.reshape(1, -1))
-            )
-            x_result = normalize_module_decode_output(
-                x_description.long_rich_decoder(x_long_local.reshape(1, -1))
-            )
+            with _profile_section(self.profiler, "shot.decode.long.zero"):
+                z_result = normalize_module_decode_output(
+                    z_description.long_rich_decoder(z_long_local.reshape(1, -1))
+                )
+            with _profile_section(self.profiler, "shot.decode.long.plus"):
+                x_result = normalize_module_decode_output(
+                    x_description.long_rich_decoder(x_long_local.reshape(1, -1))
+                )
             z_module = z_description.long_module
             x_module = x_description.long_module
             z_selected_indices = z_indices
@@ -730,76 +795,105 @@ class _AdaptiveShotRunner:
             else None
         )
         pair_id = f"teleportation={z_description.teleportation_index}"
-        self.event_observations.extend([
-            AdaptiveEventObservation(
-                event_id=z_description.event_id,
-                teleportation_index=z_description.teleportation_index,
-                state_basis=z_description.state_basis,
-                confidence=z_confidence,
-                used_long=extend_pair,
-                would_extend=z_would_extend,
-                pair_id=pair_id,
-                pair_risk=pair_risk,
-            ),
-            AdaptiveEventObservation(
-                event_id=x_description.event_id,
-                teleportation_index=x_description.teleportation_index,
-                state_basis=x_description.state_basis,
-                confidence=x_confidence,
-                used_long=extend_pair,
-                would_extend=x_would_extend,
-                pair_id=pair_id,
-                pair_risk=pair_risk,
-            ),
-        ])
-        self._commit_logical_unit(z_module, z_result, z_selected_indices)
-        self._commit_logical_unit(x_module, x_result, x_selected_indices)
+        with _profile_section(self.profiler, "shot.result.bookkeeping"):
+            self.event_observations.extend([
+                AdaptiveEventObservation(
+                    event_id=z_description.event_id,
+                    teleportation_index=z_description.teleportation_index,
+                    state_basis=z_description.state_basis,
+                    confidence=z_confidence,
+                    used_long=extend_pair,
+                    would_extend=z_would_extend,
+                    pair_id=pair_id,
+                    pair_risk=pair_risk,
+                ),
+                AdaptiveEventObservation(
+                    event_id=x_description.event_id,
+                    teleportation_index=x_description.teleportation_index,
+                    state_basis=x_description.state_basis,
+                    confidence=x_confidence,
+                    used_long=extend_pair,
+                    would_extend=x_would_extend,
+                    pair_id=pair_id,
+                    pair_risk=pair_risk,
+                ),
+            ])
+        with _profile_section(self.profiler, "shot.state_prep.correction_commit"):
+            self._commit_logical_unit(z_module, z_result, z_selected_indices)
+            self._commit_logical_unit(x_module, x_result, x_selected_indices)
 
     def _run_standard_module(self, module: Any) -> None:
         previous_measurements = self._measurement_count()
         previous_detectors = self._detector_count()
-        self.simulator.do(module.circuit)
+        role = getattr(module, "_profile_role", None)
+        physical_name = (
+            f"shot.downstream.{role}.physical"
+            if role is not None
+            else "shot.standard.physical"
+        )
+        with _profile_section(self.profiler, physical_name):
+            self.simulator.do(module.circuit)
         self.physical_units.append(module)
         logical_units = self.units + [module]
-        measurements = self._corrected_measurements(
-            logical_units=logical_units,
-            measurement_permutation=(
-                self.measurement_permutation
-                + list(
-                    range(
-                        previous_measurements,
-                        previous_measurements + module.num_measurements,
-                    )
-                )
-            ),
+        reconstruction_name = (
+            f"shot.downstream.{role}.measurement_reconstruction"
+            if role is not None
+            else "shot.standard.measurement_reconstruction"
         )
+        commit_name = (
+            f"shot.downstream.{role}.correction_commit"
+            if role is not None
+            else "shot.standard.correction_commit"
+        )
+        with _profile_section(self.profiler, reconstruction_name):
+            measurements = self._corrected_measurements(
+                logical_units=logical_units,
+                measurement_permutation=(
+                    self.measurement_permutation
+                    + list(
+                        range(
+                            previous_measurements,
+                            previous_measurements + module.num_measurements,
+                        )
+                    )
+                ),
+            )
 
         if isinstance(module, no_measurement_module):
-            self._commit_logical_unit(
-                module,
-                ModuleDecodeResult(corrections=np.zeros((1, 0), dtype=np.uint8)),
-            )
+            with _profile_section(self.profiler, commit_name):
+                self._commit_logical_unit(
+                    module,
+                    ModuleDecodeResult(corrections=np.zeros((1, 0), dtype=np.uint8)),
+                )
             return
 
         local_measurements = measurements[
             previous_measurements : previous_measurements + module.num_measurements
         ]
         if isinstance(module, logical_measurement_module):
-            values = module.c_func(local_measurements.reshape(1, -1))
-            expected = np.asarray(module.c_func_expected_output)
-            self.logical_error |= bool(np.any(values[0] != expected))
-            self._commit_logical_unit(
-                module,
-                ModuleDecodeResult(corrections=np.zeros((1, 0), dtype=np.uint8)),
+            decode_name = (
+                f"shot.downstream.{role}.online_decode"
+                if role is not None
+                else "shot.standard.decode"
             )
+            with _profile_section(self.profiler, decode_name):
+                values = module.c_func(local_measurements.reshape(1, -1))
+                expected = np.asarray(module.c_func_expected_output)
+                self.logical_error |= bool(np.any(values[0] != expected))
+            with _profile_section(self.profiler, commit_name):
+                self._commit_logical_unit(
+                    module,
+                    ModuleDecodeResult(corrections=np.zeros((1, 0), dtype=np.uint8)),
+                )
             return
 
         if isinstance(module, only_postselection_module):
             self.postselected ^= bool(module.c_func(local_measurements.reshape(1, -1))[0])
-            self._commit_logical_unit(
-                module,
-                ModuleDecodeResult(corrections=np.zeros((1, 0), dtype=np.uint8)),
-            )
+            with _profile_section(self.profiler, commit_name):
+                self._commit_logical_unit(
+                    module,
+                    ModuleDecodeResult(corrections=np.zeros((1, 0), dtype=np.uint8)),
+                )
             return
 
         if isinstance(module, detector_module):
@@ -816,8 +910,15 @@ class _AdaptiveShotRunner:
         else:
             raise TypeError(f"Unknown module type: {type(module)!r}")
 
-        result = normalize_module_decode_output(module.c_func(local_input))
-        self._commit_logical_unit(module, result)
+        decode_name = (
+            f"shot.downstream.{role}.online_decode"
+            if role is not None
+            else "shot.standard.decode"
+        )
+        with _profile_section(self.profiler, decode_name):
+            result = normalize_module_decode_output(module.c_func(local_input))
+        with _profile_section(self.profiler, commit_name):
+            self._commit_logical_unit(module, result)
 
     def run(self, modules: Sequence[Any]) -> tuple[bool, bool, list[AdaptiveEventObservation]]:
         index = 0
@@ -842,16 +943,27 @@ class _AdaptiveShotRunner:
             if isinstance(module, AdaptiveStatePrepModule):
                 self._run_adaptive_event(module)
             else:
-                self._run_standard_module(module)
+                role = getattr(module, "_profile_role", None)
+                stage_name = (
+                    f"shot.downstream.{role}"
+                    if role is not None
+                    else "shot.standard"
+                )
+                with _profile_section(self.profiler, stage_name):
+                    self._run_standard_module(module)
             index += 1
 
         circuit = self._circuit_for_units(self.physical_units)
-        corrected = self._corrected_measurements()
+        with _profile_section(self.profiler, "shot.final.detector_validation"):
+            corrected = self._corrected_measurements()
         if circuit.num_detectors:
-            detector_flips, _ = circuit.compile_m2d_converter().convert(
-                measurements=corrected.reshape(1, -1),
-                separate_observables=True,
-            )
+            with _profile_section(
+                self.profiler, "shot.final.detector_validation.convert"
+            ):
+                detector_flips, _ = circuit.compile_m2d_converter().convert(
+                    measurements=corrected.reshape(1, -1),
+                    separate_observables=True,
+                )
             if np.any(detector_flips):
                 raise RuntimeError("adaptive software corrections left detector flips")
         return self.logical_error, self.postselected, self.event_observations
@@ -873,7 +985,14 @@ class StatefulAdaptiveKnillExecutor:
         self.batch_size = batch_size
         self.seed = seed
 
-    def _run_batch(self, batch_number: int) -> tuple[np.ndarray, np.ndarray, list[list[AdaptiveEventObservation]]]:
+    def _run_batch(
+        self,
+        batch_number: int,
+        *,
+        profiler: Any = None,
+        profile_phase: str = "measured",
+        profile_shot_offset: int = 0,
+    ) -> tuple[np.ndarray, np.ndarray, list[list[AdaptiveEventObservation]]]:
         errors = np.zeros(self.batch_size, dtype=bool)
         postselected = np.zeros(self.batch_size, dtype=bool)
         observations: list[list[AdaptiveEventObservation]] = []
@@ -881,8 +1000,17 @@ class StatefulAdaptiveKnillExecutor:
             shot_seed = None
             if self.seed is not None:
                 shot_seed = (self.seed + batch_number * self.batch_size + shot) % (2**64)
-            runner = _AdaptiveShotRunner(seed=shot_seed)
-            error, postselection, shot_observations = runner.run(self.modules)
+            shot_context = (
+                profiler.shot(
+                    profile_shot_offset + batch_number * self.batch_size + shot,
+                    phase=profile_phase,
+                )
+                if profiler is not None
+                else nullcontext()
+            )
+            with shot_context:
+                runner = _AdaptiveShotRunner(seed=shot_seed, profiler=profiler)
+                error, postselection, shot_observations = runner.run(self.modules)
             errors[shot] = error
             postselected[shot] = postselection
             observations.append(shot_observations)
@@ -894,6 +1022,9 @@ class StatefulAdaptiveKnillExecutor:
         max_errors_before_halting: int,
         *,
         detail_level: str = "summary",
+        profiler: Any = None,
+        profile_phase: str = "measured",
+        profile_shot_offset: int = 0,
     ):
         from hex_qec.modularisation.results import (
             AdaptiveBellPairStats,
@@ -918,18 +1049,33 @@ class StatefulAdaptiveKnillExecutor:
             total_postselected_errors < max_errors_before_halting
             and self.batch_size * batch_number < max_shots
         ):
-            errors, postselected, observations = self._run_batch(batch_number)
+            errors, postselected, observations = self._run_batch(
+                batch_number,
+                profiler=profiler,
+                profile_phase=profile_phase,
+                profile_shot_offset=profile_shot_offset,
+            )
             if observations and not event_order:
                 event_order = [
                     (item.event_id, item.teleportation_index, item.state_basis)
                     for item in observations[0]
                 ]
-            total_errors += int(np.sum(errors))
-            total_postselected_errors += int(np.sum(~postselected & errors))
-            total_shots += self.batch_size
-            all_observations.extend(observations)
-            all_errors.append(errors)
-            all_postselected.append(postselected)
+            bookkeeping = (
+                profiler.context_scope(
+                    shot_index=-1,
+                    phase=profile_phase,
+                )
+                if profiler is not None
+                else nullcontext()
+            )
+            with bookkeeping:
+                with _profile_section(profiler, "result.accumulation"):
+                    total_errors += int(np.sum(errors))
+                    total_postselected_errors += int(np.sum(~postselected & errors))
+                    total_shots += self.batch_size
+                    all_observations.extend(observations)
+                    all_errors.append(errors)
+                    all_postselected.append(postselected)
             batch_number += 1
 
         final_errors = np.concatenate(all_errors) if all_errors else np.zeros(0, dtype=bool)

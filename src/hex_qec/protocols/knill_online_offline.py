@@ -21,6 +21,13 @@ import json
 import time
 import logging
 import sys
+from contextlib import nullcontext
+
+
+def _profile_setup(profiler, name: str):
+    if profiler is None:
+        return nullcontext()
+    return profiler.section(name, absolute=True)
 
 def knill_online_offline(
         parity_check_tuple,
@@ -149,6 +156,8 @@ def knill_online_offline_adaptive(
         batch_size=256,
         seed=None,
         surface_code: bool = False,
+        profiler=None,
+        warmup_shots: int = 0,
 ):
     """Run Knill with two-level adaptive state preparation.
 
@@ -175,21 +184,23 @@ def knill_online_offline_adaptive(
     """
     from hex_qec.simulation import StatefulAdaptiveKnillExecutor
 
-    block_template, _, _, _ = create_stabilizers_and_block_template(*parity_check_tuple)
-    blocks = generate_blocks(2 * num_teleportations + 1, block_template)
+    with _profile_setup(profiler, "setup.block_layout"):
+        block_template, _, _, _ = create_stabilizers_and_block_template(*parity_check_tuple)
+        blocks = generate_blocks(2 * num_teleportations + 1, block_template)
 
-    plus_state_prep_circuit_noiseless = noiseless_unitary_state_prep(
-        parity_check_tuple, "x", eigenvalue=0
-    )
-    zero_state_prep_circuit_noiseless = noiseless_unitary_state_prep(
-        parity_check_tuple, "z", eigenvalue=0
-    )
-    plus_state_prep_data_qubit = no_measurement_module(
-        plus_state_prep_circuit_noiseless, blocks[0]["data_qubits"]
-    )
-    zero_state_prep_data_qubit = no_measurement_module(
-        zero_state_prep_circuit_noiseless, blocks[0]["data_qubits"]
-    )
+    with _profile_setup(profiler, "setup.initial_state_module"):
+        plus_state_prep_circuit_noiseless = noiseless_unitary_state_prep(
+            parity_check_tuple, "x", eigenvalue=0
+        )
+        zero_state_prep_circuit_noiseless = noiseless_unitary_state_prep(
+            parity_check_tuple, "z", eigenvalue=0
+        )
+        plus_state_prep_data_qubit = no_measurement_module(
+            plus_state_prep_circuit_noiseless, blocks[0]["data_qubits"]
+        )
+        zero_state_prep_data_qubit = no_measurement_module(
+            zero_state_prep_circuit_noiseless, blocks[0]["data_qubits"]
+        )
 
     modules = []
     if pauli.lower() == "x":
@@ -198,6 +209,7 @@ def knill_online_offline_adaptive(
         modules.append(zero_state_prep_data_qubit)
     else:
         raise ValueError("pauli must be 'x' or 'z'")
+    modules[0]._profile_role = "initial_preparation"
 
     for teleportation_index in range(num_teleportations):
         zero_support = (
@@ -210,73 +222,98 @@ def knill_online_offline_adaptive(
             + blocks[2 * teleportation_index + 2]["x_ancillas"]
             + blocks[2 * teleportation_index + 2]["z_ancillas"]
         )
-        modules.append(generate_adaptive_state_prep_module(
+        with _profile_setup(profiler, "setup.adaptive_state_prep.zero"):
+            zero_module = generate_adaptive_state_prep_module(
+                parity_check_tuple,
+                adaptive_schedule,
+                "z",
+                physical_error,
+                zero_support,
+                offline_decoder_generator,
+                matchable_offline_decoding,
+                event_id=f"teleportation={teleportation_index},state=z",
+                teleportation_index=teleportation_index,
+                confidence_aggregator=confidence_aggregator,
+                surface_code=surface_code,
+                profiler=profiler,
+            )
+        with _profile_setup(profiler, "setup.adaptive_state_prep.plus"):
+            plus_module = generate_adaptive_state_prep_module(
+                parity_check_tuple,
+                adaptive_schedule,
+                "x",
+                physical_error,
+                plus_support,
+                offline_decoder_generator,
+                matchable_offline_decoding,
+                event_id=f"teleportation={teleportation_index},state=x",
+                teleportation_index=teleportation_index,
+                confidence_aggregator=confidence_aggregator,
+                surface_code=surface_code,
+                profiler=profiler,
+            )
+        modules.extend([zero_module, plus_module])
+        with _profile_setup(profiler, "setup.transversal_cnot"):
+            cnot_module = generate_transversal_cnot_module(
+                physical_error,
+                blocks[2 * teleportation_index + 2]["data_qubits"],
+                blocks[2 * teleportation_index + 1]["data_qubits"],
+            )
+        cnot_module._profile_role = "cnot"
+        modules.append(cnot_module)
+        with _profile_setup(profiler, "setup.bell_measurement"):
+            bell_module = generate_bell_measurement_and_correction_module(
+                parity_check_tuple,
+                physical_error,
+                blocks[2 * (teleportation_index - 1) + 2]["data_qubits"],
+                blocks[2 * teleportation_index + 1]["data_qubits"],
+                blocks[2 * teleportation_index + 2]["data_qubits"],
+                decoder_generator=online_decoder_generator,
+            )
+        bell_module._profile_role = "bell_measurement"
+        modules.append(bell_module)
+
+    with _profile_setup(profiler, "setup.final_logical_module"):
+        measure_data_qubit_x = generate_logical_measurement_module(
             parity_check_tuple,
-            adaptive_schedule,
-            "z",
             physical_error,
-            zero_support,
-            offline_decoder_generator,
-            matchable_offline_decoding,
-            event_id=f"teleportation={teleportation_index},state=z",
-            teleportation_index=teleportation_index,
-            confidence_aggregator=confidence_aggregator,
-            surface_code=surface_code,
-        ))
-        modules.append(generate_adaptive_state_prep_module(
-            parity_check_tuple,
-            adaptive_schedule,
-            "x",
-            physical_error,
-            plus_support,
-            offline_decoder_generator,
-            matchable_offline_decoding,
-            event_id=f"teleportation={teleportation_index},state=x",
-            teleportation_index=teleportation_index,
-            confidence_aggregator=confidence_aggregator,
-            surface_code=surface_code,
-        ))
-        modules.append(generate_transversal_cnot_module(
-            physical_error,
-            blocks[2 * teleportation_index + 2]["data_qubits"],
-            blocks[2 * teleportation_index + 1]["data_qubits"],
-        ))
-        modules.append(generate_bell_measurement_and_correction_module(
-            parity_check_tuple,
-            physical_error,
-            blocks[2 * (teleportation_index - 1) + 2]["data_qubits"],
-            blocks[2 * teleportation_index + 1]["data_qubits"],
-            blocks[2 * teleportation_index + 2]["data_qubits"],
+            pauli="x",
+            new_support=blocks[2 * num_teleportations]["data_qubits"],
             decoder_generator=online_decoder_generator,
-        ))
+            expected_logical_values=[],
+        )
+        measure_data_qubit_z = generate_logical_measurement_module(
+            parity_check_tuple,
+            physical_error,
+            pauli="z",
+            new_support=blocks[2 * num_teleportations]["data_qubits"],
+            decoder_generator=online_decoder_generator,
+            expected_logical_values=[],
+        )
+    final_module = measure_data_qubit_x if pauli.lower() == "x" else measure_data_qubit_z
+    final_module._profile_role = "final_logical_measurement"
+    modules.append(final_module)
 
-    measure_data_qubit_x = generate_logical_measurement_module(
-        parity_check_tuple,
-        physical_error,
-        pauli="x",
-        new_support=blocks[2 * num_teleportations]["data_qubits"],
-        decoder_generator=online_decoder_generator,
-        expected_logical_values=[],
-    )
-    measure_data_qubit_z = generate_logical_measurement_module(
-        parity_check_tuple,
-        physical_error,
-        pauli="z",
-        new_support=blocks[2 * num_teleportations]["data_qubits"],
-        decoder_generator=online_decoder_generator,
-        expected_logical_values=[],
-    )
-    modules.append(measure_data_qubit_x if pauli.lower() == "x" else measure_data_qubit_z)
-
-    executor = StatefulAdaptiveKnillExecutor(
-        modules,
-        batch_size=batch_size,
-        seed=seed,
-    )
+    with _profile_setup(profiler, "setup.executor_construction"):
+        executor = StatefulAdaptiveKnillExecutor(
+            modules,
+            batch_size=batch_size,
+            seed=seed,
+        )
+    if profiler is not None and warmup_shots:
+        executor.simulate_result(
+            max_shots=warmup_shots,
+            max_errors_before_halting=max_errors_before_halting,
+            detail_level=detail_level,
+            profiler=profiler,
+            profile_phase="warmup",
+        )
     result = executor.simulate_result(
         max_shots=max_shots,
         max_errors_before_halting=max_errors_before_halting,
         detail_level=detail_level,
+        profiler=profiler,
+        profile_phase="measured",
     )
     if results_path:
         with open(results_path, "w") as result_file:
@@ -286,4 +323,3 @@ def knill_online_offline_adaptive(
                 "logical_error_rate": result.logical_error_rate,
             }, result_file, indent=2)
     return result
-

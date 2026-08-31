@@ -109,6 +109,14 @@ therefore both ancillas always enter the Bell CNOT at the same selected depth.
 The analysis payload preserves each patch confidence and would-extend value,
 as well as the pair-level decision and `z_only`/`x_only`/`both` cause counts.
 
+For opt-in diagnostics, the adaptive entry point also accepts a
+`hex_qec.simulation.WallTimeProfiler` and `warmup_shots`. These optional
+arguments only collect wall-clock sections around existing construction and
+execution calls; they do not alter seeds, batching, decoder inputs,
+correction propagation, or policy decisions. The dedicated runner in
+`profiling/adaptive_walltime_profile.py` uses `batch_size=1` and writes raw,
+summary, and Markdown outputs outside the normal test run.
+
 The standalone wrapper in `examples/knill_example.py` selects one of
 PyMatching, BP, or BP-OSD by name, loads matrices by code and distance, sets
 `syndrome_measurement_rounds = distance`, and returns the protocol tuple.

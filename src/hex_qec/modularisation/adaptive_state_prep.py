@@ -6,6 +6,7 @@ and stateful executor.
 """
 
 from dataclasses import dataclass
+from contextlib import nullcontext
 import copy
 import re
 from typing import Callable, List, Tuple
@@ -191,6 +192,7 @@ def generate_adaptive_state_prep_modules(
     event_id_prefix: str | None = None,
     teleportation_index: int | None = None,
     confidence_aggregator: Callable[[CSSInnerDecodeResults], ndarray | None] | None = None,
+    profiler=None,
 ) -> list[AdaptiveStatePrepModule]:
     """Build adaptive descriptions for one or more encoded-block supports."""
 
@@ -208,24 +210,44 @@ def generate_adaptive_state_prep_modules(
     long_x, long_z = _detector_partition(
         parity_check_tuple, pauli, schedule.long_rounds
     )
-    short_template = css_detector_module(
-        short_local,
-        decoder_generator,
-        parity_check_tuple,
-        short_x,
-        short_z,
-        matchable=matchable,
-        confidence_aggregator=confidence_aggregator,
+    short_context = (
+        profiler.section(
+            f"setup.adaptive_module.{pauli.lower()}.short",
+            absolute=True,
+        )
+        if profiler is not None
+        else nullcontext()
     )
-    long_template = css_detector_module(
-        long_local,
-        decoder_generator,
-        parity_check_tuple,
-        long_x,
-        long_z,
-        matchable=matchable,
-        confidence_aggregator=confidence_aggregator,
+    with short_context:
+        short_template = css_detector_module(
+            short_local,
+            decoder_generator,
+            parity_check_tuple,
+            short_x,
+            short_z,
+            matchable=matchable,
+            confidence_aggregator=confidence_aggregator,
+            profiler=profiler,
+        )
+    long_context = (
+        profiler.section(
+            f"setup.adaptive_module.{pauli.lower()}.long",
+            absolute=True,
+        )
+        if profiler is not None
+        else nullcontext()
     )
+    with long_context:
+        long_template = css_detector_module(
+            long_local,
+            decoder_generator,
+            parity_check_tuple,
+            long_x,
+            long_z,
+            matchable=matchable,
+            confidence_aggregator=confidence_aggregator,
+            profiler=profiler,
+        )
 
     modules: list[AdaptiveStatePrepModule] = []
     for support_index, support in enumerate(supports):
@@ -264,6 +286,7 @@ def generate_adaptive_state_prep_module(
     event_id: str | None = None,
     teleportation_index: int | None = None,
     confidence_aggregator: Callable[[CSSInnerDecodeResults], ndarray | None] | None = None,
+    profiler=None,
 ) -> AdaptiveStatePrepModule:
     """Build one adaptive state-preparation description."""
 
@@ -279,4 +302,5 @@ def generate_adaptive_state_prep_module(
         event_id_prefix=event_id,
         teleportation_index=teleportation_index,
         confidence_aggregator=confidence_aggregator,
+        profiler=profiler,
     )[0]

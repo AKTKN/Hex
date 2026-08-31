@@ -752,3 +752,55 @@ No adaptive simulator or core-code refactor was implemented or tested.
     Outcome: PASS. Both runners emitted real-time flushed progress. The
     adaptive smoke output reported `pair_fallback_rate=1.000` and
     `mean_rounds=3.000`; both checkpoints were written successfully.
+
+## Adaptive wall-time profiling
+
+98. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py
+    tests/test_phase5_confidence_adaptive.py` after adding opt-in timing
+    hooks.
+
+    Outcome: PASS, 32 tests with the existing eight dependency deprecation
+    warnings.
+
+99. `PYTHONPATH=src pytest -q tests/test_walltime_profiling.py`.
+
+    Outcome: PASS, 4 tests with the existing eight dependency deprecation
+    warnings. This covered nested/repeated timing sections, disabled timing,
+    raw/summary/Markdown report creation, correction-map/reference-sample
+    instrumentation, and seeded profiling-result preservation.
+
+100. `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m compileall -q
+     src tests profiling && git diff --check`.
+
+     Outcome: PASS, 69 tests with the existing eight dependency deprecation
+     warnings; compilation and whitespace validation also passed.
+
+101. `PYTHONPATH=src python -m profiling.adaptive_walltime_profile
+     --distance 3 --physical-error 0.003 --short-rounds 1 --long-rounds 3
+     --num-shots 2 --warmup-shots 1 --seed 1234 --policy always-long
+     --output-dir /tmp/hex-adaptive-profile-smoke` and the same command after
+     the recorder scope correction.
+
+     Outcome: PASS. The d=3 AlwaysLong profiling runner completed 2 measured
+     shots and wrote raw, summary, Markdown, and PNG outputs.
+
+102. `python -m profiling.adaptive_walltime_profile --distance 5
+     --physical-error 0.003 --short-rounds 1 --long-rounds 5 --num-shots 5
+     --warmup-shots 1 --seed 1234 --policy always-long --pauli z
+     --output-dir profiling/results`.
+
+     Outcome: PASS. The requested profile completed with 5 measured shots,
+     0/5 logical errors, mean measured end-to-end time 0.181446721 s/shot,
+     35 corrected-measurement/reference-sample calls, 5 cache hits, 30 cache
+     misses, and 0.618240641 s total map generation. It created
+     `profiling/results/adaptive_walltime_raw.csv`,
+     `adaptive_walltime_summary.csv`, `adaptive_walltime_report.md`, and
+     `adaptive_walltime_breakdown.png`.
+
+103. `python -m profiling.adaptive_walltime_profile --distance 3
+     --physical-error 0.003 --short-rounds 1 --long-rounds 3 --num-shots 2
+     --warmup-shots 1 --seed 1234 --policy cluster-llr --confidence-threshold
+     0.01 --output-dir /tmp/hex-adaptive-profile-cluster`.
+
+     Outcome: PASS. The optional Cluster-LLR profile completed 2 measured
+     shots and recorded short selection for both synchronized pairs.

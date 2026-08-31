@@ -94,6 +94,11 @@ Hex/
             └── DESCRIPTION.md
 ```
 
+The repository also contains an opt-in top-level `profiling/` package. Its
+`adaptive_walltime_profile.py` runner writes small adaptive wall-clock
+profiles under `profiling/results/`; it is intentionally outside the normal
+pytest path and does not replace or optimize the simulation backend.
+
 ### `circuit_generation`
 
 Main low-level circuit/code utilities. Current responsibilities include:
