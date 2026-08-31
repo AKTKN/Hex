@@ -37,6 +37,20 @@ validation and performance work remain separate tasks.
 
 Large simulations should wait until the above compatibility checks are documented in `TEST.md`.
 
+The current surface-code experiment driver is
+`notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb`. It records the
+installed decoder versions, uses explicit BP-LSD settings and uniform
+code-capacity priors, and checkpoints scalar aggregate rows. It is intentionally
+smoke-sized by default; production sweeps still need independent statistical
+validation.
+
+The synchronized pair executor interleaves physical suffix execution as
+Z-short, X-short, Z-extra, X-extra and removes local detector annotations from
+the interleaved suffix. The long decoders still consume complete per-patch
+histories. A future general stateful executor should replace this
+protocol-specific record permutation with an explicit causal detector-record
+model and test downstream detector modules before broadening the scope.
+
 # 1. Improve the adaptive execution engine
 
 The current adaptive executor intentionally uses one `FlipSimulator` per shot

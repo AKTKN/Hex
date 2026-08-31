@@ -1035,11 +1035,12 @@ class modularised_circuit():
     def simulate(self,
                  max_shots: int,
                  max_errors_before_halting: int,
-                 results_path: str = ""
+                 results_path: str = "",
+                 seed: int | None = None,
                  ) -> int:
 
         m2d_converter = self.circuit.compile_m2d_converter()
-        measurement_sampler = self.circuit.compile_sampler()
+        measurement_sampler = self.circuit.compile_sampler(seed=seed)
 
         # Perform the sampling in batches
         total_logical_errors = 0
@@ -1149,6 +1150,7 @@ class modularised_circuit():
         max_errors_before_halting: int,
         results_path: str = "",
         detail_level: SimulationDetailLevel = "summary",
+        seed: int | None = None,
     ) -> SimulationResult:
         """Run the existing static simulation and wrap its aggregate result.
 
@@ -1164,6 +1166,7 @@ class modularised_circuit():
             max_shots=max_shots,
             max_errors_before_halting=max_errors_before_halting,
             results_path=results_path,
+            seed=seed,
         )
         runtime_seconds = time.perf_counter() - start_time
 

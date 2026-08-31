@@ -65,6 +65,31 @@ class AdaptiveStatePrepStats:
 
 
 @dataclass
+class AdaptiveBellPairStats:
+    """Aggregate result for one synchronized Bell-ancilla preparation."""
+
+    pair_id: str
+    teleportation_index: int | None = None
+    short_rounds: int | None = None
+    long_rounds: int | None = None
+    short_count: int | None = None
+    long_count: int | None = None
+    pair_fallback_rate: float | None = None
+    pair_short_fraction: float | None = None
+    pair_long_fraction: float | None = None
+    mean_effective_rounds: float | None = None
+    z_only_count: int | None = None
+    x_only_count: int | None = None
+    both_count: int | None = None
+    z_only_fallback_fraction: float | None = None
+    x_only_fallback_fraction: float | None = None
+    both_fallback_fraction: float | None = None
+    mean_z_patch_risk: float | None = None
+    mean_x_patch_risk: float | None = None
+    mean_pair_risk: float | None = None
+
+
+@dataclass
 class SimulationResult:
     """Aggregate simulation output with reserved adaptive-result fields.
 
@@ -76,6 +101,7 @@ class SimulationResult:
     summary: SimulationSummary
     state_prep_stats: list[AdaptiveStatePrepStats] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    bell_pair_stats: list[AdaptiveBellPairStats] = field(default_factory=list)
     per_shot: dict[str, np.ndarray] | None = None
     debug_data: dict[str, Any] | None = None
     detail_level: SimulationDetailLevel = "summary"

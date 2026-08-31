@@ -256,6 +256,33 @@ class AdaptiveEventObservation:
     state_basis: str | None
     confidence: float | None
     used_long: bool
+    would_extend: bool | None = None
+    pair_id: str | None = None
+    pair_risk: float | None = None
+
+
+@dataclass
+class _PhysicalSegment:
+    """A measured physical circuit segment without a decoder callback."""
+
+    circuit: stim.Circuit
+    num_measurements: int
+    num_detectors: int = 0
+
+
+def _without_detectors(circuit: stim.Circuit) -> stim.Circuit:
+    """Remove detector annotations before executing a non-contiguous suffix."""
+
+    result = stim.Circuit()
+    for instruction in circuit:
+        if instruction.name == "DETECTOR":
+            continue
+        result.append(
+            instruction.name,
+            instruction.targets_copy(),
+            instruction.gate_args_copy(),
+        )
+    return result
 
 
 @dataclass
@@ -275,11 +302,17 @@ class _AdaptiveShotRunner:
             seed=seed,
         )
         self.units: list[Any] = []
+        self.physical_units: list[Any] = []
         self.correction_events: list[_CorrectionEvent] = []
         self.event_observations: list[AdaptiveEventObservation] = []
         self.logical_error = False
         self.postselected = False
         self._map_cache: dict[tuple[int, ...], list[Any | None]] = {}
+        # logical measurement index -> physical measurement index.  It is
+        # normally identity; a long synchronized pair has z-short, x-short,
+        # z-extra, x-extra in the physical record but z-long, x-long in the
+        # logical correction-map order.
+        self.measurement_permutation: list[int] = []
 
     @staticmethod
     def _circuit_for_units(units: Sequence[Any]) -> stim.Circuit:
@@ -327,27 +360,82 @@ class _AdaptiveShotRunner:
         self._map_cache[key] = maps
         return maps
 
-    def _corrected_measurements(self, units: Sequence[Any]) -> np.ndarray:
-        circuit = self._circuit_for_units(units)
+    def _corrected_measurements(
+        self,
+        physical_units: Sequence[Any] | None = None,
+        logical_units: Sequence[Any] | None = None,
+        measurement_permutation: Sequence[int] | None = None,
+    ) -> np.ndarray:
+        physical_units = self.physical_units if physical_units is None else physical_units
+        logical_units = self.units if logical_units is None else logical_units
+        circuit = self._circuit_for_units(physical_units)
         flips = self.simulator.get_measurement_flips()
         measurements = reconstruct_measurement_records(
             np.asarray(circuit.reference_sample(), dtype=bool),
             flips,
         )[0]
+        logical_length = self._measurement_count(logical_units)
+        if logical_length != measurements.shape[0]:
+            raise RuntimeError(
+                "logical and physical paths do not have the same measurement count"
+            )
+        permutation = list(
+            self.measurement_permutation
+            if measurement_permutation is None
+            else measurement_permutation
+        )
+        if len(permutation) != logical_length:
+            raise RuntimeError("measurement permutation has the wrong length")
         software_flips = np.zeros(measurements.shape, dtype=bool)
-        maps = self._correction_maps(units)
+        maps = self._correction_maps(logical_units)
         for correction_event in self.correction_events:
             correction_map = maps[correction_event.unit_index]
             if correction_map is None:
                 continue
             correction = np.asarray(correction_event.corrections).reshape(1, -1)
-            updates = (csc_matrix(correction) @ correction_map).toarray()[0] % 2
-            software_flips ^= updates.astype(bool)
+            logical_updates = (
+                csc_matrix(correction) @ correction_map
+            ).toarray()[0] % 2
+            physical_updates = np.zeros(measurements.shape, dtype=bool)
+            physical_updates[np.asarray(permutation)] = logical_updates.astype(bool)
+            software_flips ^= physical_updates
         return np.logical_xor(measurements, software_flips)
 
     def _append_unit(self, module: Any, result: ModuleDecodeResult) -> None:
         unit_index = len(self.units)
         self.units.append(module)
+        self.physical_units.append(module)
+        start = len(self.measurement_permutation)
+        self.measurement_permutation.extend(
+            range(start, start + module.num_measurements)
+        )
+        self.correction_events.append(
+            _CorrectionEvent(
+                unit_index=unit_index,
+                module=module,
+                corrections=np.asarray(result.corrections)[0],
+            )
+        )
+        if result.postselection is not None:
+            self.postselected ^= bool(np.asarray(result.postselection)[0])
+
+    def _commit_logical_unit(
+        self,
+        module: Any,
+        result: ModuleDecodeResult,
+        physical_measurement_indices: Sequence[int] | None = None,
+    ) -> None:
+        """Commit a decoded module whose physical segment is already present."""
+
+        unit_index = len(self.units)
+        self.units.append(module)
+        if physical_measurement_indices is None:
+            start = len(self.measurement_permutation)
+            physical_measurement_indices = range(
+                start,
+                start + module.num_measurements,
+            )
+        self.measurement_permutation.extend(physical_measurement_indices)
         self.correction_events.append(
             _CorrectionEvent(
                 unit_index=unit_index,
@@ -362,10 +450,21 @@ class _AdaptiveShotRunner:
         self,
         description: AdaptiveStatePrepModule,
     ) -> None:
-        previous_measurements = self._measurement_count()
+        previous_measurements = self._measurement_count(self.physical_units)
         self.simulator.do(description.short_circuit)
-        short_units = self.units + [description.short_module]
-        short_measurements = self._corrected_measurements(short_units)
+        self.physical_units.append(description.short_module)
+        short_measurements = self._corrected_measurements(
+            logical_units=self.units + [description.short_module],
+            measurement_permutation=(
+                self.measurement_permutation
+                + list(
+                    range(
+                        previous_measurements,
+                        previous_measurements + description.short_module.num_measurements,
+                    )
+                )
+            ),
+        )
         short_local = short_measurements[
             previous_measurements : previous_measurements
             + description.short_module.num_measurements
@@ -393,9 +492,27 @@ class _AdaptiveShotRunner:
             raise ValueError("adaptive policy must return one boolean per shot")
 
         if bool(extend[0]):
-            self.simulator.do(description.extra_circuit)
-            long_units = self.units + [description.long_module]
-            long_measurements = self._corrected_measurements(long_units)
+            extra_circuit = _without_detectors(description.extra_circuit)
+            self.simulator.do(extra_circuit)
+            self.physical_units.append(
+                _PhysicalSegment(
+                    extra_circuit,
+                    extra_circuit.num_measurements,
+                )
+            )
+            long_measurements = self._corrected_measurements(
+                logical_units=self.units + [description.long_module],
+                measurement_permutation=(
+                    self.measurement_permutation
+                    + list(
+                        range(
+                            previous_measurements,
+                            previous_measurements
+                            + description.long_module.num_measurements,
+                        )
+                    )
+                ),
+            )
             long_local = long_measurements[
                 previous_measurements : previous_measurements
                 + description.long_module.num_measurements
@@ -420,19 +537,234 @@ class _AdaptiveShotRunner:
                 state_basis=description.state_basis,
                 confidence=confidence,
                 used_long=bool(extend[0]),
+                would_extend=bool(extend[0]),
             )
         )
-        self._append_unit(selected_module, selected_result)
+        self._commit_logical_unit(selected_module, selected_result)
+
+    def _run_adaptive_pair(
+        self,
+        z_description: AdaptiveStatePrepModule,
+        x_description: AdaptiveStatePrepModule,
+    ) -> None:
+        """Execute the two ancilla patches with one synchronized decision.
+
+        The physical order is ``z-short, x-short, z-extra, x-extra`` so both
+        short histories exist before either policy is evaluated.  The logical
+        correction-map order is kept as ``z, x``; ``measurement_permutation``
+        translates that order into the physical record order.
+        """
+
+        previous_measurements = self._measurement_count(self.physical_units)
+        self.simulator.do(z_description.short_circuit)
+        self.physical_units.append(z_description.short_module)
+        z_short_count = z_description.short_module.num_measurements
+
+        self.simulator.do(x_description.short_circuit)
+        self.physical_units.append(x_description.short_module)
+        x_short_count = x_description.short_module.num_measurements
+
+        short_logical_units = self.units + [
+            z_description.short_module,
+            x_description.short_module,
+        ]
+        short_permutation = self.measurement_permutation + list(
+            range(
+                previous_measurements,
+                previous_measurements + z_short_count + x_short_count,
+            )
+        )
+        short_measurements = self._corrected_measurements(
+            logical_units=short_logical_units,
+            measurement_permutation=short_permutation,
+        )
+        z_short_local = short_measurements[
+            previous_measurements : previous_measurements + z_short_count
+        ]
+        x_short_local = short_measurements[
+            previous_measurements
+            + z_short_count : previous_measurements
+            + z_short_count
+            + x_short_count
+        ]
+
+        z_short_result = normalize_module_decode_output(
+            z_description.short_rich_decoder(z_short_local.reshape(1, -1))
+        )
+        x_short_result = normalize_module_decode_output(
+            x_description.short_rich_decoder(x_short_local.reshape(1, -1))
+        )
+        z_short_decode = z_short_result.decode_result or DecodeResult(
+            correction=z_short_result.corrections
+        )
+        x_short_decode = x_short_result.decode_result or DecodeResult(
+            correction=x_short_result.corrections
+        )
+
+        def policy_decision(
+            description: AdaptiveStatePrepModule,
+            result: DecodeResult,
+        ) -> bool:
+            context = AdaptivePolicyContext(
+                batch_size=1,
+                event_id=description.event_id,
+                teleportation_index=description.teleportation_index,
+                state_basis=description.state_basis,
+            )
+            decision = np.asarray(
+                description.schedule.policy.should_extend(
+                    result,
+                    context=context,
+                ),
+                dtype=bool,
+            )
+            if decision.shape != (1,):
+                raise ValueError("adaptive policy must return one boolean per shot")
+            return bool(decision[0])
+
+        z_would_extend = policy_decision(z_description, z_short_decode)
+        x_would_extend = policy_decision(x_description, x_short_decode)
+        extend_pair = z_would_extend or x_would_extend
+
+        if extend_pair:
+            z_extra_circuit = _without_detectors(z_description.extra_circuit)
+            self.simulator.do(z_extra_circuit)
+            z_extra = _PhysicalSegment(
+                z_extra_circuit,
+                z_extra_circuit.num_measurements,
+            )
+            self.physical_units.append(z_extra)
+            x_extra_circuit = _without_detectors(x_description.extra_circuit)
+            self.simulator.do(x_extra_circuit)
+            x_extra = _PhysicalSegment(
+                x_extra_circuit,
+                x_extra_circuit.num_measurements,
+            )
+            self.physical_units.append(x_extra)
+
+            z_extra_start = previous_measurements + z_short_count + x_short_count
+            x_extra_start = z_extra_start + z_extra.num_measurements
+            z_indices = list(range(previous_measurements, previous_measurements + z_short_count))
+            z_indices += list(range(z_extra_start, z_extra_start + z_extra.num_measurements))
+            x_indices = list(range(previous_measurements + z_short_count, previous_measurements + z_short_count + x_short_count))
+            x_indices += list(range(x_extra_start, x_extra_start + x_extra.num_measurements))
+            long_permutation = self.measurement_permutation + z_indices + x_indices
+            long_logical_units = self.units + [
+                z_description.long_module,
+                x_description.long_module,
+            ]
+            long_measurements = self._corrected_measurements(
+                logical_units=long_logical_units,
+                measurement_permutation=long_permutation,
+            )
+            z_long_local = np.concatenate(
+                [
+                    long_measurements[
+                        previous_measurements : previous_measurements + z_short_count
+                    ],
+                    long_measurements[
+                        z_extra_start : z_extra_start + z_extra.num_measurements
+                    ],
+                ]
+            )
+            x_long_local = np.concatenate(
+                [
+                    long_measurements[
+                        previous_measurements + z_short_count : previous_measurements
+                        + z_short_count + x_short_count
+                    ],
+                    long_measurements[
+                        x_extra_start : x_extra_start + x_extra.num_measurements
+                    ],
+                ]
+            )
+            z_result = normalize_module_decode_output(
+                z_description.long_rich_decoder(z_long_local.reshape(1, -1))
+            )
+            x_result = normalize_module_decode_output(
+                x_description.long_rich_decoder(x_long_local.reshape(1, -1))
+            )
+            z_module = z_description.long_module
+            x_module = x_description.long_module
+            z_selected_indices = z_indices
+            x_selected_indices = x_indices
+        else:
+            z_result = z_short_result
+            x_result = x_short_result
+            z_module = z_description.short_module
+            x_module = x_description.short_module
+            z_selected_indices = list(
+                range(previous_measurements, previous_measurements + z_short_count)
+            )
+            x_selected_indices = list(
+                range(
+                    previous_measurements + z_short_count,
+                    previous_measurements + z_short_count + x_short_count,
+                )
+            )
+
+        def confidence(result: DecodeResult) -> float | None:
+            if result.confidence is None:
+                return None
+            return float(np.asarray(result.confidence).reshape(-1)[0])
+
+        z_confidence = confidence(z_short_decode)
+        x_confidence = confidence(x_short_decode)
+        pair_risk = (
+            max(z_confidence, x_confidence)
+            if z_confidence is not None and x_confidence is not None
+            else None
+        )
+        pair_id = f"teleportation={z_description.teleportation_index}"
+        self.event_observations.extend([
+            AdaptiveEventObservation(
+                event_id=z_description.event_id,
+                teleportation_index=z_description.teleportation_index,
+                state_basis=z_description.state_basis,
+                confidence=z_confidence,
+                used_long=extend_pair,
+                would_extend=z_would_extend,
+                pair_id=pair_id,
+                pair_risk=pair_risk,
+            ),
+            AdaptiveEventObservation(
+                event_id=x_description.event_id,
+                teleportation_index=x_description.teleportation_index,
+                state_basis=x_description.state_basis,
+                confidence=x_confidence,
+                used_long=extend_pair,
+                would_extend=x_would_extend,
+                pair_id=pair_id,
+                pair_risk=pair_risk,
+            ),
+        ])
+        self._commit_logical_unit(z_module, z_result, z_selected_indices)
+        self._commit_logical_unit(x_module, x_result, x_selected_indices)
 
     def _run_standard_module(self, module: Any) -> None:
         previous_measurements = self._measurement_count()
         previous_detectors = self._detector_count()
         self.simulator.do(module.circuit)
-        units = self.units + [module]
-        measurements = self._corrected_measurements(units)
+        self.physical_units.append(module)
+        logical_units = self.units + [module]
+        measurements = self._corrected_measurements(
+            logical_units=logical_units,
+            measurement_permutation=(
+                self.measurement_permutation
+                + list(
+                    range(
+                        previous_measurements,
+                        previous_measurements + module.num_measurements,
+                    )
+                )
+            ),
+        )
 
         if isinstance(module, no_measurement_module):
-            self.units.append(module)
+            self._commit_logical_unit(
+                module,
+                ModuleDecodeResult(corrections=np.zeros((1, 0), dtype=np.uint8)),
+            )
             return
 
         local_measurements = measurements[
@@ -442,16 +774,22 @@ class _AdaptiveShotRunner:
             values = module.c_func(local_measurements.reshape(1, -1))
             expected = np.asarray(module.c_func_expected_output)
             self.logical_error |= bool(np.any(values[0] != expected))
-            self.units.append(module)
+            self._commit_logical_unit(
+                module,
+                ModuleDecodeResult(corrections=np.zeros((1, 0), dtype=np.uint8)),
+            )
             return
 
         if isinstance(module, only_postselection_module):
             self.postselected ^= bool(module.c_func(local_measurements.reshape(1, -1))[0])
-            self.units.append(module)
+            self._commit_logical_unit(
+                module,
+                ModuleDecodeResult(corrections=np.zeros((1, 0), dtype=np.uint8)),
+            )
             return
 
         if isinstance(module, detector_module):
-            converter = self._circuit_for_units(units).compile_m2d_converter()
+            converter = self._circuit_for_units(self.physical_units).compile_m2d_converter()
             detector_flips, _ = converter.convert(
                 measurements=measurements.reshape(1, -1),
                 separate_observables=True,
@@ -465,17 +803,36 @@ class _AdaptiveShotRunner:
             raise TypeError(f"Unknown module type: {type(module)!r}")
 
         result = normalize_module_decode_output(module.c_func(local_input))
-        self._append_unit(module, result)
+        self._commit_logical_unit(module, result)
 
     def run(self, modules: Sequence[Any]) -> tuple[bool, bool, list[AdaptiveEventObservation]]:
-        for module in modules:
+        index = 0
+        while index < len(modules):
+            module = modules[index]
+            if (
+                isinstance(module, AdaptiveStatePrepModule)
+                and index + 1 < len(modules)
+                and isinstance(modules[index + 1], AdaptiveStatePrepModule)
+                and module.teleportation_index is not None
+                and module.teleportation_index == modules[index + 1].teleportation_index
+                and {module.state_basis, modules[index + 1].state_basis} == {"x", "z"}
+            ):
+                z_module, x_module = (
+                    (module, modules[index + 1])
+                    if module.state_basis == "z"
+                    else (modules[index + 1], module)
+                )
+                self._run_adaptive_pair(z_module, x_module)
+                index += 2
+                continue
             if isinstance(module, AdaptiveStatePrepModule):
                 self._run_adaptive_event(module)
             else:
                 self._run_standard_module(module)
+            index += 1
 
-        circuit = self._circuit_for_units(self.units)
-        corrected = self._corrected_measurements(self.units)
+        circuit = self._circuit_for_units(self.physical_units)
+        corrected = self._corrected_measurements()
         if circuit.num_detectors:
             detector_flips, _ = circuit.compile_m2d_converter().convert(
                 measurements=corrected.reshape(1, -1),
@@ -525,6 +882,7 @@ class StatefulAdaptiveKnillExecutor:
         detail_level: str = "summary",
     ):
         from hex_qec.modularisation.results import (
+            AdaptiveBellPairStats,
             AdaptiveStatePrepStats,
             SimulationResult,
             SimulationSummary,
@@ -566,7 +924,9 @@ class StatefulAdaptiveKnillExecutor:
         )
         event_stats: list[AdaptiveStatePrepStats] = []
         confidence_matrix = np.full((total_shots, len(event_order)), np.nan)
+        pair_risk_matrix = np.full((total_shots, len(event_order)), np.nan)
         used_long_matrix = np.zeros((total_shots, len(event_order)), dtype=bool)
+        would_extend_matrix = np.zeros((total_shots, len(event_order)), dtype=bool)
         for event_index, (event_id, teleportation_index, state_basis) in enumerate(event_order):
             event_observations = [shot[event_index] for shot in all_observations]
             used_long = np.array([item.used_long for item in event_observations], dtype=bool)
@@ -575,7 +935,15 @@ class StatefulAdaptiveKnillExecutor:
                 for item in event_observations
             ])
             confidence_matrix[:, event_index] = confidences
+            pair_risk_matrix[:, event_index] = np.array([
+                np.nan if item.pair_risk is None else item.pair_risk
+                for item in event_observations
+            ])
             used_long_matrix[:, event_index] = used_long
+            would_extend_matrix[:, event_index] = np.array(
+                [bool(item.would_extend) for item in event_observations],
+                dtype=bool,
+            )
             finite = confidences[np.isfinite(confidences)]
             event_stats.append(
                 AdaptiveStatePrepStats(
@@ -617,13 +985,91 @@ class StatefulAdaptiveKnillExecutor:
                     )
                     break
 
+        bell_pair_stats: list[AdaptiveBellPairStats] = []
+        pair_columns: list[tuple[str, int, int]] = []
+        if event_order:
+            for event_index in range(0, len(event_order) - 1, 2):
+                first = event_order[event_index]
+                second = event_order[event_index + 1]
+                first_pair = all_observations[0][event_index].pair_id
+                second_pair = all_observations[0][event_index + 1].pair_id
+                if first_pair is None or first_pair != second_pair:
+                    continue
+                pair_columns.append((first_pair, event_index, event_index + 1))
+                pair_used_long = used_long_matrix[:, event_index]
+                if not np.array_equal(
+                    pair_used_long,
+                    used_long_matrix[:, event_index + 1],
+                ):
+                    raise RuntimeError("Bell-pair patches selected different SE depths")
+                z_would = would_extend_matrix[:, event_index]
+                x_would = would_extend_matrix[:, event_index + 1]
+                z_only = z_would & ~x_would & pair_used_long
+                x_only = x_would & ~z_would & pair_used_long
+                both = z_would & x_would & pair_used_long
+                short_rounds = next(
+                    module.schedule.short_rounds
+                    for module in self.modules
+                    if isinstance(module, AdaptiveStatePrepModule)
+                    and module.event_id == first[0]
+                )
+                long_rounds = next(
+                    module.schedule.long_rounds
+                    for module in self.modules
+                    if isinstance(module, AdaptiveStatePrepModule)
+                    and module.event_id == first[0]
+                )
+                selected_rounds = np.where(
+                    pair_used_long,
+                    long_rounds,
+                    short_rounds,
+                )
+                z_risk = confidence_matrix[:, event_index]
+                x_risk = confidence_matrix[:, event_index + 1]
+                pair_risk = np.maximum(z_risk, x_risk)
+                finite_z = z_risk[np.isfinite(z_risk)]
+                finite_x = x_risk[np.isfinite(x_risk)]
+                finite_pair = pair_risk[np.isfinite(pair_risk)]
+                shots = len(pair_used_long)
+                denominator = float(shots) if shots else 1.0
+                bell_pair_stats.append(
+                    AdaptiveBellPairStats(
+                        pair_id=first_pair,
+                        teleportation_index=first[1],
+                        short_rounds=short_rounds,
+                        long_rounds=long_rounds,
+                        short_count=int(np.sum(~pair_used_long)),
+                        long_count=int(np.sum(pair_used_long)),
+                        pair_fallback_rate=float(np.mean(pair_used_long)) if shots else 0.0,
+                        pair_short_fraction=float(np.mean(~pair_used_long)) if shots else 0.0,
+                        pair_long_fraction=float(np.mean(pair_used_long)) if shots else 0.0,
+                        mean_effective_rounds=float(np.mean(selected_rounds)) if shots else 0.0,
+                        z_only_count=int(np.sum(z_only)),
+                        x_only_count=int(np.sum(x_only)),
+                        both_count=int(np.sum(both)),
+                        z_only_fallback_fraction=float(np.sum(z_only) / denominator),
+                        x_only_fallback_fraction=float(np.sum(x_only) / denominator),
+                        both_fallback_fraction=float(np.sum(both) / denominator),
+                        mean_z_patch_risk=float(np.mean(finite_z)) if finite_z.size else None,
+                        mean_x_patch_risk=float(np.mean(finite_x)) if finite_x.size else None,
+                        mean_pair_risk=float(np.mean(finite_pair)) if finite_pair.size else None,
+                    )
+                )
+
         per_shot = None
         if detail_level in {"analysis", "debug"}:
             per_shot = {
                 "final_logical_error": final_errors,
                 "postselected": final_postselected,
                 "confidence": confidence_matrix,
+                "pair_risk": pair_risk_matrix,
                 "used_long": used_long_matrix,
+                "would_extend": would_extend_matrix,
+                "used_long_pair": np.column_stack(
+                    [used_long_matrix[:, z_index] for _, z_index, _ in pair_columns]
+                )
+                if pair_columns
+                else np.zeros((total_shots, 0), dtype=bool),
                 "event_id": np.asarray([x[0] for x in event_order], dtype=object),
                 "teleportation_index": np.asarray(
                     [x[1] if x[1] is not None else -1 for x in event_order],
@@ -639,6 +1085,7 @@ class StatefulAdaptiveKnillExecutor:
                 runtime_seconds=time.perf_counter() - start,
             ),
             state_prep_stats=event_stats,
+            bell_pair_stats=bell_pair_stats,
             metadata={
                 "execution_backend": "adaptive_stateful_flip_simulator",
                 "adaptive": True,

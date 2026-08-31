@@ -156,6 +156,7 @@ class HexBPLSDDecoder:
         ind_cluster_stats: dict,
         w_e: np.ndarray,
         alpha: float,
+        global_timestep_bit_history: dict | None = None,
     ) -> float:
         """
         Definition 2 (Lee, English, Bartlett 2026): Cluster LLR alpha-norm fraction.
@@ -173,20 +174,24 @@ class HexBPLSDDecoder:
         if total_w == 0.0 or not ind_cluster_stats:
             return 0.0
 
+        final_memberships = self._final_cluster_memberships(
+            ind_cluster_stats,
+            global_timestep_bit_history,
+        )
+
         # Final clusters: active and not absorbed into another cluster
         active_clusters = [
-            cs for cs in ind_cluster_stats.values()
-            if cs.get("active", False) and cs.get("absorbed_by_cluster", -1) == -1
+            cluster_id
+            for cluster_id, cs in ind_cluster_stats.items()
+            if cs.get("active", False)
+            and cs.get("absorbed_by_cluster", -1) == -1
         ]
         if not active_clusters:
             return 0.0
 
         cluster_sums = []
-        for cs in active_clusters:
-            # ldpc versions expose this as ``solution``; retain support for
-            # the older/alternate ``final_bits`` spelling used by the
-            # original research adapter.
-            bits = cs.get("solution", cs.get("final_bits", []))
+        for cluster_id in active_clusters:
+            bits = final_memberships[cluster_id]
             if not bits:
                 continue
             csum = float(np.sum(w_e[list(bits)]))
@@ -201,6 +206,76 @@ class HexBPLSDDecoder:
             # alpha -> inf: dominated by the largest cluster
             return float(np.max(arr) / total_w)
         return float((np.sum(arr ** alpha) ** (1.0 / alpha)) / total_w)
+
+    @staticmethod
+    def _final_cluster_memberships(
+        ind_cluster_stats: dict,
+        global_timestep_bit_history: dict | None,
+    ) -> dict[int, list[int]]:
+        """Return final LSD cluster membership, never recovery support.
+
+        Recent ``ldpc`` releases expose ``final_bits`` directly.  The local
+        installed fork instead exposes ``final_bit_count`` and the bits added
+        at each growth timestep.  In that schema, follow absorbed-cluster
+        links to each active root and union all recorded additions.  This
+        reconstructs the final cluster membership while deliberately ignoring
+        ``solution``, which is the selected recovery vector.
+        """
+
+        def root_id(cluster_id: int) -> int:
+            seen: set[int] = set()
+            current = cluster_id
+            while True:
+                if current in seen:
+                    raise ValueError("cyclic BP-LSD cluster absorption metadata")
+                seen.add(current)
+                parent = ind_cluster_stats[current].get("absorbed_by_cluster", -1)
+                if parent == -1:
+                    return current
+                if parent not in ind_cluster_stats:
+                    raise ValueError("BP-LSD cluster parent is missing from statistics")
+                current = int(parent)
+
+        memberships: dict[int, set[int]] = {
+            int(cluster_id): set()
+            for cluster_id, stats in ind_cluster_stats.items()
+            if stats.get("active", False)
+            and stats.get("absorbed_by_cluster", -1) == -1
+        }
+        if not memberships:
+            return {}
+
+        for cluster_id, stats in ind_cluster_stats.items():
+            cluster_id = int(cluster_id)
+            direct_bits = stats.get("final_bits")
+            if direct_bits is not None:
+                root = root_id(cluster_id)
+                if stats.get("active", False) and root in memberships:
+                    memberships[root].update(int(bit) for bit in direct_bits)
+                continue
+
+            if global_timestep_bit_history is None:
+                raise ValueError(
+                    "BP-LSD statistics provide neither final_bits nor "
+                    "growth history for final cluster reconstruction"
+                )
+            root = root_id(cluster_id)
+            if root not in memberships:
+                continue
+            for timestep_stats in global_timestep_bit_history.values():
+                bits = timestep_stats.get(cluster_id, [])
+                memberships[root].update(int(bit) for bit in bits)
+
+        final_memberships: dict[int, list[int]] = {}
+        for cluster_id, bits in memberships.items():
+            expected_count = ind_cluster_stats[cluster_id].get("final_bit_count")
+            if expected_count is not None and len(bits) != int(expected_count):
+                raise ValueError(
+                    "BP-LSD growth history cannot reconstruct final cluster "
+                    f"{cluster_id}: got {len(bits)} bits, expected {expected_count}"
+                )
+            final_memberships[cluster_id] = sorted(bits)
+        return final_memberships
 
     def decode_batch(self, syndromes):
         syndromes = np.asarray(syndromes, dtype=np.uint8)
@@ -221,6 +296,7 @@ class HexBPLSDDecoder:
                 stats["individual_cluster_stats"],
                 self.prior_llr,
                 self.alpha,
+                stats.get("global_timestep_bit_history"),
             )
 
         return DecodeResult(

@@ -34,6 +34,8 @@ def knill_online_offline(
         pauli,
         num_teleportations,
         results_path = "",
+        surface_code: bool = False,
+        seed: int | None = None,
 ):
     block_template, _, _, _ = create_stabilizers_and_block_template(*parity_check_tuple)
     blocks = generate_blocks(2*num_teleportations+1, block_template)
@@ -58,6 +60,7 @@ def knill_online_offline(
             [blocks[2*teleportation_index+1]["data_qubits"]+blocks[2*teleportation_index+1]["x_ancillas"]+blocks[2*teleportation_index+1]["z_ancillas"] for teleportation_index in range(num_teleportations)],
             offline_decoder_generator,
             matchable=matchable_offline_decoding,
+            surface_code=surface_code,
     )
     plus_state_prep_modules = generate_state_prep_modules(
             parity_check_tuple,
@@ -67,6 +70,7 @@ def knill_online_offline(
             [blocks[2*teleportation_index+2]["data_qubits"]+blocks[2*teleportation_index+2]["x_ancillas"]+blocks[2*teleportation_index+2]["z_ancillas"] for teleportation_index in range(num_teleportations)],
             offline_decoder_generator,
             matchable=matchable_offline_decoding,
+            surface_code=surface_code,
     )
     for teleportation_index in range(num_teleportations):
         # Prepare logical Bell state
@@ -122,7 +126,8 @@ def knill_online_offline(
     samples_performed, logical_errors = mod_circ.simulate(
         max_shots,
         max_errors_before_halting,
-        results_path=results_path
+        results_path=results_path,
+        seed=seed,
     )
     return samples_performed, logical_errors
 
@@ -143,6 +148,7 @@ def knill_online_offline_adaptive(
         detail_level="summary",
         batch_size=256,
         seed=None,
+        surface_code: bool = False,
 ):
     """Run Knill with two-level adaptive state preparation.
 
@@ -198,6 +204,7 @@ def knill_online_offline_adaptive(
             event_id=f"teleportation={teleportation_index},state=z",
             teleportation_index=teleportation_index,
             confidence_aggregator=confidence_aggregator,
+            surface_code=surface_code,
         ))
         modules.append(generate_adaptive_state_prep_module(
             parity_check_tuple,
@@ -210,6 +217,7 @@ def knill_online_offline_adaptive(
             event_id=f"teleportation={teleportation_index},state=x",
             teleportation_index=teleportation_index,
             confidence_aggregator=confidence_aggregator,
+            surface_code=surface_code,
         ))
         modules.append(generate_transversal_cnot_module(
             physical_error,
@@ -261,6 +269,4 @@ def knill_online_offline_adaptive(
                 "logical_error_rate": result.logical_error_rate,
             }, result_file, indent=2)
     return result
-
-
 

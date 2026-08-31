@@ -1,9 +1,9 @@
 # Theory notes
 
-This file is a research/theory skeleton for the current Hex baseline.  It
-records the mathematical conventions that the implementation currently uses;
-adaptive scheduling and its performance claims are intentionally left for a
-later validated phase.
+This file is a research/theory skeleton for the current Hex baseline and its
+validated two-level reference executor. It records conventions used by the
+implementation; no production-scale adaptive performance claim is made from
+the smoke tests.
 
 ## CSS code convention
 
@@ -91,6 +91,19 @@ w = log(1 + p) - log(p),
 after converting hyperedges to edges.  The non-matchable path retains the DEM
 check matrix and uses the DEM priors directly as weights.
 
+The BP-LSD example exposes a risk-like Cluster LLR. For final LSD clusters
+`C_i` and error-variable weights `w_e = log((1-p_e)/(p_e))`, the adapter
+computes
+
+```text
+Q_LLR^(alpha) = || { sum_(e in C_i) w_e }_i ||_alpha / sum_e w_e.
+```
+
+`C_i` means the complete final cluster membership, not the support of the
+selected recovery (`solution`). The current code-capacity BP-LSD prior is
+uniform over decoder variables; DEM priors are separate and come from DEM
+columns. Circuit-derived effective code-capacity priors are future work.
+
 ## Knill and Steane interpretation
 
 Knill error correction prepares encoded `|0_L>` and `|+_L>` ancillas, creates
@@ -111,14 +124,20 @@ LER = number of shots with one or more wrong logical values / sampled shots.
 Postselected counts, when a module supplies postselection flags, are tracked
 separately by the static engine.
 
-## Scope of this skeleton
+## Stateful two-level scope
 
-The current implementation samples a complete static circuit before module
-decoding.  It therefore does not yet represent a short-round confidence
-decision, continuation of one physical shot, or a long decode over a
-short-plus-extra history.  Those semantics require a separate stateful
-sampling design and should be added only after the fixed-round baseline is
-validated.
+The legacy implementation samples a complete static circuit before module
+decoding. The separate adaptive reference executor instead runs short
+state-preparation prefixes on per-shot `stim.FlipSimulator` states, evaluates
+patch policies, and continues selected Bell-pair patches through extra rounds.
+The `|0_L>` and `|+_L>` decisions are synchronized by OR: if either patch is
+low-confidence, both continue their own physical state and both decode the
+full history. Decoder corrections remain software-frame updates; they are
+not applied again to the physical simulator.
+
+This is a correctness-first two-level implementation. It does not yet model
+decoder latency, optimize branch execution, or derive exact circuit-level
+code-capacity priors.
 
 Future additions should cite the specific QEC and Knill literature, define
 the confidence metric mathematically, and distinguish physical state from

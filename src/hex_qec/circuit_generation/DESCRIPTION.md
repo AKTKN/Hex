@@ -149,5 +149,6 @@ DEM decoding and correction propagation.
 - Circuit construction is repeated for each requested configuration and is
   not a stateful or adaptive execution mechanism.  Repeated rounds are
   statically described before sampling.
-- The surface-code-specific path is present but is not selected by the
-  protocol functions in this snapshot.
+- The surface-code-specific path is selected only when a protocol or builder
+  is explicitly called with `surface_code=True`; the default remains
+  `False` for backward compatibility.

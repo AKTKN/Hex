@@ -1,8 +1,8 @@
 # Implementation status
 
-Date: 2026-08-29
+Date: 2026-08-31
 Branch: `hex-adaptive`  
-Base commit: `cc26813` (`Implement two-level adaptive state-preparation framework with diagnostic policies`)
+Base commit: `762a9f1` (`feat: Implement adaptive state preparation in Knill protocol`)
 
 ## Completed checkpoints
 
@@ -41,6 +41,19 @@ Base commit: `cc26813` (`Implement two-level adaptive state-preparation framewor
   adapter example exposing BP-LSD cluster LLR through `DecodeResult.confidence`.
 - Added the separate `knill_online_offline_adaptive(...)` result-returning
   entry point, including `|0_L>` and `|+_L>` events at each teleportation.
+- Corrected the BP-LSD Cluster LLR adapter to use complete final LSD cluster
+  membership.  It uses `final_bits` when available and reconstructs membership
+  from the installed fork's growth history when only `final_bit_count` is
+  exposed; it never substitutes the recovery `solution` support.
+- Added backward-compatible `surface_code=False` options to fixed and adaptive
+  Knill entry points and propagated them to all state-preparation builders.
+- Synchronized the two patches of every Bell ancilla: both short prefixes are
+  decoded before an OR pair decision, and either extension request continues
+  both existing physical simulator states.  Added pair-level fallback-cause
+  diagnostics and per-shot pair-risk output.
+- Added the smoke-sized experiment driver
+  `notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb`; it is opt-in and
+  does not run production sweeps.
 - Integrated the adapters into existing decoder call sites while preserving
   historical input casts and scalar-fallback output dtypes.
 - Added focused tests under `tests/test_phase1_decoder_adapters.py`.
@@ -65,6 +78,15 @@ same-shot continuation for selected shots, full-history long decoding, and
 event/result aggregation.  The legacy protocol entry points and static backend
 are unchanged.  `ClusterLLRPolicy` is an example policy; the executor does
 not assume BP-LSD or a particular confidence metric.
+
+For each teleportation, adaptive Knill now runs the Z and X ancilla short
+prefixes before evaluating either policy.  If either patch requests extension,
+both continue their own existing `FlipSimulator` state and both long decoders
+consume their complete round-1..long histories.  Pair decisions are exposed
+through `SimulationResult.bell_pair_stats`; analysis payloads include patch
+confidence, patch would-extend values, pair risk, synchronized `used_long`,
+and final logical-error arrays.  The surface-code ordering is opt-in through
+`surface_code=True` on both protocol entry points.
 
 The stateful backend reconstructs physical records with
 `Circuit.reference_sample() XOR get_measurement_flips().T`, while maintaining
@@ -126,6 +148,14 @@ detectors, 12 Z detectors, and matchable DEM check shapes `(8, 21)` and
   `__init__.py`.
 - No larger-shot numerical fixed-round regression baseline beyond the Phase 3
   d=3 noisy comparison has been established yet.
+- The synchronized reference path interleaves physical segments as
+  Z-short/X-short/Z-extra/X-extra and strips local detector annotations from
+  the interleaved suffix; long decoder histories are reconstructed explicitly.
+  Downstream detector-module use after such an interleaved event needs further
+  causal-detector validation before this becomes a general dynamic executor.
+- The notebook records and passes stable parameter-derived seeds to both engines; Stim
+  documents seeded results as version- and machine-dependent, so seeds provide
+  reproducible local provenance rather than a cross-version guarantee.
 
 ## Phase 3 validation
 
@@ -168,10 +198,22 @@ The reference implementation intentionally executes one shot at a time and
 does not compact branch states.  Confidence calibration, circuit-derived
 code-capacity priors, and optimized branch execution remain future work.
 
+## Latest validation
+
+The focused BP-LSD/adaptive file passes 12 tests and the complete local suite
+passes 47 tests, with only the existing eight dependency deprecation warnings.
+Notebook JSON parsing and compilation of all code cells also pass.
+The validation covers final-cluster membership, surface-code builder
+propagation, fixed/adaptive endpoint preservation, same-shot prefix checks,
+confidence switching, synchronized one-patch fallback, and two Knill
+teleportations. No production sweep has been run. The BP-LSD regression logic
+covers four small syndromes and explicitly exercises a case where final
+cluster membership is larger than the selected recovery support.
+
 ## Next recommended task
 
-The next recommended step is diagnostic validation of confidence calibration
-and then a separately scoped optimization of branch execution.  Do not change
+The next recommended step is separate statistical validation of confidence
+calibration. Do not change
 the static backend or decoder mathematics.  Circuit-derived code-capacity
 priors and confidence-threshold selection policy remain experimental and are
 documented in `FUTURE.md`.

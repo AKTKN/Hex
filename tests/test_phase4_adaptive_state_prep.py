@@ -58,6 +58,40 @@ def test_adaptive_description_has_exact_short_extra_long_decomposition():
     assert description.long_module.circuit == description.long_circuit
 
 
+def test_surface_code_ordering_is_explicit_and_shared_by_fixed_adaptive_builders():
+    parity_checks = get_parity_check_matrices("surface", 3)
+    support = list(range(17))
+    fixed_default = generate_state_prep_modules(
+        parity_checks, 2, "z", 0.0, [support],
+        pymatching.Matching.from_check_matrix, True,
+    )[0]
+    fixed_surface = generate_state_prep_modules(
+        parity_checks, 2, "z", 0.0, [support],
+        pymatching.Matching.from_check_matrix, True, surface_code=True,
+    )[0]
+    adaptive_surface = generate_adaptive_state_prep_module(
+        parity_checks,
+        AdaptiveSERounds(1, 2, AlwaysShortPolicy()),
+        "z",
+        0.0,
+        support,
+        pymatching.Matching.from_check_matrix,
+        True,
+        surface_code=True,
+    )
+
+    assert fixed_default.circuit != fixed_surface.circuit
+    assert adaptive_surface.short_circuit + adaptive_surface.extra_circuit == adaptive_surface.long_circuit
+    assert adaptive_surface.short_circuit != fixed_default.circuit
+    data_qubits = set(range(parity_checks[0].shape[1]))
+    for instruction in adaptive_surface.extra_circuit:
+        if instruction.name in {"R", "RX", "RY"}:
+            assert not any(
+                target.is_qubit_target and target.qubit_value in data_qubits
+                for target in instruction.targets_copy()
+            )
+
+
 def test_schedule_validates_two_level_rounds():
     with pytest.raises(ValueError, match="at least 1"):
         AdaptiveSERounds(0, 1, AlwaysShortPolicy())

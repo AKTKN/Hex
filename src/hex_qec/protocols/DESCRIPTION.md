@@ -6,8 +6,8 @@ return `(samples_performed, logical_errors)`.
 
 ## Common inputs and outputs
 
-`knill_online_offline` and `steane_online_offline` have the same positional
-signature:
+`knill_online_offline` has the following backward-compatible signature (the
+new options are intended to be passed by keyword):
 
 ```python
 (
@@ -22,6 +22,8 @@ signature:
     pauli,
     num_teleportations,
     results_path="",
+    surface_code=False,
+    seed=None,
 )
 ```
 
@@ -33,7 +35,12 @@ teleportation/correction and final logical measurement.  The offline
 generator is used for noisy encoded-state preparation.  `pauli` selects the
 initial/final logical basis (`"x"` or `"z"`).
 
-The return value is the static engine's two-integer tuple.  The number of
+`steane_online_offline` retains its historical signature and does not expose
+the Knill-only `surface_code` or `seed` options.
+
+The optional `seed` is passed to Stim's static compiled sampler; it is
+`None` by default, preserving entropy-seeded historical behavior. The return
+value is the static engine's two-integer tuple. The number of
 performed samples is normally a multiple of 256 because the engine samples
 fixed-size batches and may exceed `max_shots`.  `results_path` is passed to
 the static engine, which writes cumulative JSON statistics when nonempty.
@@ -73,12 +80,25 @@ ancilla.
 
 `knill_online_offline_adaptive(...)` accepts an `AdaptiveSERounds` object
 instead of a fixed integer. For every teleportation it creates adaptive
-`|0_L>` and `|+_L>` events. Each event decodes the short record, calls the
-configured policy, continues low-confidence shots on their existing physical
-simulator, and decodes the full long history. The optional
+`|0_L>` and `|+_L>` events. The stateful executor decodes both short records
+before making one synchronized Bell-pair decision: if either patch requests
+extension, both patches continue on their existing physical simulator state
+and decode their full long histories. The optional
 `confidence_aggregator` receives the four inner CSS `DecodeResult` objects and
 returns the module-level confidence array, keeping metric selection out of
 the simulator.
+
+Both `knill_online_offline(...)` and `knill_online_offline_adaptive(...)`
+accept `surface_code=False`. Passing `True` selects the surface-code-specific
+stabilizer interaction ordering for all generated state-preparation patches;
+the default preserves the historical ordering.
+
+The adaptive result's `state_prep_stats` are patch-level records, while
+`SimulationResult.bell_pair_stats` records the synchronized decision per
+teleportation.  A pair extends when either patch policy requests extension;
+therefore both ancillas always enter the Bell CNOT at the same selected depth.
+The analysis payload preserves each patch confidence and would-extend value,
+as well as the pair-level decision and `z_only`/`x_only`/`both` cause counts.
 
 The standalone wrapper in `examples/knill_example.py` selects one of
 PyMatching, BP, or BP-OSD by name, loads matrices by code and distance, sets

@@ -45,9 +45,11 @@ adaptive fields: a list of `AdaptiveStatePrepStats`, metadata, and separate
 optional `per_shot` and `debug_data` payloads. The state-preparation record
 can later identify a state-preparation event and teleportation index, record
 short/long counts and confidence summaries, carry decoder diagnostics, and
-store average SE rounds. It is empty for the current fixed-round engine;
-confidence, decisions, and event identities are not inferred from static
-circuits.
+store average SE rounds. `AdaptiveBellPairStats` stores the synchronized
+pair-level decision, fallback-cause counts (`z_only`, `x_only`, `both`),
+effective rounds, and optional risk means. These adaptive fields are empty
+for the current fixed-round engine; confidence, decisions, and event
+identities are not inferred from static circuits.
 
 The supported detail levels are `summary`, `analysis`, and `debug`. The
 current static engine accepts all three labels for API stability but populates
@@ -58,6 +60,13 @@ records. No adaptive branch is made at any detail level.
 and `logical_error_rate` convenience properties plus `to_legacy_tuple()`.
 `SimulationResult.from_legacy(...)` wraps the existing two-count return value
 without rerunning a simulation.
+
+Adaptive Knill runs additionally fill `bell_pair_stats` with one
+`AdaptiveBellPairStats` per teleportation.  Its `short_count` and `long_count`
+are counts of synchronized Bell-pair decisions, so
+`long_count == z_only_count + x_only_count + both_count`; the latter three
+fields classify which patch first requested extension.  `mean_effective_rounds`
+is the measured mean of the selected short/long depth over pair shots.
 
 ## Module classes
 
@@ -192,7 +201,7 @@ modules to compute their global correction maps.  The map-generation calls
 use `stim.FlipSimulator(disable_stabilizer_randomization=True)` because the
 maps represent deterministic Pauli propagation, not physical sampling.
 
-`simulate(max_shots, max_errors_before_halting, results_path="")` then:
+`simulate(max_shots, max_errors_before_halting, results_path="", seed=None)` then:
 
 1. compiles a global measurement-to-detector converter and sampler;
 2. samples fixed batches of 256 shots from the concatenated circuit;
@@ -203,6 +212,9 @@ maps represent deterministic Pauli propagation, not physical sampling.
 6. asserts that all final detector flips are zero;
 7. returns `(samples_performed, total_logical_errors)`.
 
+When provided, `seed` is passed to Stim's compiled sampler. The default
+`None` retains the historical entropy-seeded behavior.
+
 The loop stops based on postselected errors and the batch-count condition.  It
 can therefore perform a full extra batch beyond `max_shots`.  When
 `results_path` is nonempty, cumulative counts are written as JSON after each
@@ -210,7 +222,7 @@ batch with keys for total and postselected samples/errors and logical error
 rate.
 
 `simulate_result(max_shots, max_errors_before_halting, results_path="",
-detail_level="summary")` delegates directly to `simulate`, measures wrapper
+detail_level="summary", seed=None)` delegates directly to `simulate`, measures wrapper
 runtime, and returns a `SimulationResult`. Therefore it uses the same
 compiled sampler, 256-shot batching, stopping condition, correction
 propagation, detector assertion, and optional JSON output. The legacy

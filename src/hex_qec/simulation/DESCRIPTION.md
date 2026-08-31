@@ -74,19 +74,35 @@ per-shot selected results because short and long correction vectors can have
 different widths.
 
 `StatefulAdaptiveKnillExecutor` executes a sequence containing ordinary Hex
-modules and `AdaptiveStatePrepModule` events. It maintains a separate
+modules and `AdaptiveStatePrepModule` events. Adjacent `|0_L>`/`|+_L>` events
+with the same teleportation index form one synchronized pair: both short
+patches are decoded before either policy decision is committed, and either
+patch requesting extension forces both patches to long. It maintains a separate
 software correction frame, dynamically reconstructs correction-to-measurement
 maps for the selected path, and keeps physical simulator state separate from
 decoder corrections. `knill_online_offline_adaptive(...)` is the protocol
 builder using this executor. It records one event for each `|0_L>` and
 `|+_L>` preparation at every teleportation index.
 
-`SimulationResult.state_prep_stats` contains aggregate short/long counts,
+`SimulationResult.state_prep_stats` contains patch-level aggregate short/long counts,
 fallback rate, confidence summaries, average effective SE rounds, event
 identity, basis, teleportation index, and logical-error counts. With
 `detail_level="analysis"` or `"debug"`, `per_shot` additionally contains
-confidence, `used_long`, event metadata, postselection, and final logical
-error arrays.
+confidence, patch-level would-extend values, patch risk, synchronized
+`used_long`, pair decisions, event metadata, postselection, and final
+logical-error arrays.
+`SimulationResult.bell_pair_stats` contains pair-level fallback fractions and
+the `z_only`, `x_only`, and `both` diagnostic partition.
+
+For a synchronized pair, physical execution is ordered as Z-short, X-short,
+Z-extra, X-extra.  The extra circuits are executed on the two existing
+`FlipSimulator` states and are not independently sampled or reinitialized.
+Their detector annotations are omitted from the interleaved physical circuit
+because those annotations have local contiguous-record references; each
+selected long decoder still receives its complete, correctly reconstructed
+round-1..long measurement history.  Correction maps are generated in the
+logical Z-then-X order and translated to the interleaved physical measurement
+record, keeping physical state separate from the software correction frame.
 
 ## Limitations
 

@@ -157,6 +157,17 @@ threshold. This convention belongs to the example policy, not to the generic
 decoder protocol. For a different decoder, replace the adapter and policy
 while retaining the same batch shape and generator boundary.
 
+The cluster membership used in the LLR is the final LSD cluster membership,
+not the support of the selected recovery.  If an installed `ldpc` exposes
+`final_bits`, those bits are used directly.  The locally installed `ldpc`
+2.1.2 fork instead exposes `final_bit_count`, absorption links, and
+`global_timestep_bit_history`; the adapter reconstructs each active root's
+membership from that growth history and checks the reconstructed cardinality.
+It deliberately ignores `solution`, whose meaning is the recovery support.
+For code-capacity decoding, the adapter supplies a uniform probability prior
+of length equal to the check-matrix column count.  This is a baseline prior,
+not a circuit-derived effective prior; DEM priors remain tied to DEM columns.
+
 ## Dependencies and limitations
 
 The compatibility layer depends only on NumPy and the Python standard

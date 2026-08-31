@@ -441,3 +441,96 @@ No adaptive simulator or core-code refactor was implemented or tested.
 
     Outcome: PASS. Python compilation and whitespace validation completed
     successfully.
+
+## Surface-code sweep preflight and notebook
+
+62. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py
+    tests/test_phase5_confidence_adaptive.py
+    tests/test_phase1_decoder_adapters.py` after the BP-LSD membership,
+    surface-code, and synchronized-pair changes.
+
+    Outcome: PASS, 26 tests passed with 8 existing dependency deprecation
+    warnings in 6.71 s.
+
+63. Direct BP-LSD surface-code confidence probes for `(p, threshold)` values
+    `(0.1, 0.01)`, `(0.01, 0.001)`, and `(0.001, 0.0001)` using eight d=3
+    state-preparation shots.
+
+    Outcome: PASS. The observed long/short counts were `1/7`, `4/4`, and
+    `2/6`, respectively, demonstrating both branches for these smoke points.
+
+64. `PYTHONPATH=src python` execution of notebook code cells 1 through 10
+    from `notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb`.
+
+    Outcome: PASS. The notebook's tiny validation cell completed all fixed
+    p=0 checks, endpoint checks, real confidence switching, event-count,
+    prefix, synchronization, and fallback-cause assertions. It printed the
+    installed versions Stim 1.15.0, ldpc 2.1.2, and PyMatching 2.3.1. The
+    generated smoke NPZ artifact was removed afterward; no production sweep
+    was run.
+
+65. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py
+    tests/test_phase5_confidence_adaptive.py
+    tests/test_phase1_decoder_adapters.py && python -m json.tool
+    notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` followed by
+    compilation of every notebook code cell and `git diff --check`.
+
+    Outcome: PASS, 26 tests passed with 8 warnings; notebook JSON parsing,
+    all 9 code-cell compilations, and whitespace validation passed.
+
+66. `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m compileall -q src
+    tests examples` followed by JSON parsing/compilation of all 13 notebook
+    cells and `git diff --check`.
+
+    Outcome: PASS, 42 tests passed with 8 existing dependency deprecation
+    warnings in 8.53 s. Python compilation, notebook validation, and
+    whitespace validation also passed. No production sweep was run.
+
+67. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py
+    tests/test_phase5_confidence_adaptive.py
+    tests/test_phase1_decoder_adapters.py` after adding the fixed protocol
+    surface-code smoke test and pair-risk analysis assertions.
+
+    Outcome: PASS, 27 tests passed with 8 existing dependency deprecation
+    warnings in 5.23 s.
+
+68. `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m compileall -q src
+    tests examples && python -m json.tool
+    notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` followed by
+    compilation of every notebook code cell and `git diff --check`.
+
+    Outcome: PASS, 43 tests passed with 8 existing dependency deprecation
+    warnings in 7.89 s. Python compilation, notebook JSON/code validation,
+    and whitespace validation also passed. No production sweep was run.
+
+69. `PYTHONPATH=src pytest -q tests/test_phase5_confidence_adaptive.py`
+    after adding four independent BP-LSD growth-history syndrome cases.
+
+    Outcome: PASS, 12 tests passed with 8 existing dependency deprecation
+    warnings in 3.96 s.
+
+70. `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m compileall -q src
+    tests examples && python -m json.tool
+    notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` followed by
+    compilation of every notebook code cell and `git diff --check`.
+
+    Outcome: PASS, 47 tests passed with 8 existing dependency deprecation
+    warnings in 8.18 s. Python compilation, notebook JSON/code validation,
+    and whitespace validation also passed. No production sweep was run.
+
+71. Two fixed d=3, surface-code Knill calls at `physical_error=0.001`,
+    `seed=123`, and identical decoder/configuration, asserting equal legacy
+    tuples.
+
+    Outcome: PASS. Both calls returned `(256, 0)`, confirming the optional
+    static Stim seed is consumed consistently in this local environment.
+
+72. `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m compileall -q src
+    tests examples && python -m json.tool
+    notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` followed by
+    compilation of every notebook code cell and `git diff --check` after the
+    optional static seed extension.
+
+    Outcome: PASS, 47 tests passed with 8 existing dependency deprecation
+    warnings in 8.20 s. Python compilation, notebook JSON/code validation,
+    and whitespace validation also passed. No production sweep was run.

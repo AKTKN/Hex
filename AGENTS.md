@@ -235,6 +235,20 @@ shots on their existing `FlipSimulator` states.  Confidence direction and
 metric selection are policy responsibilities; the simulator consumes only
 `DecodeResult.confidence`.
 
+The adaptive Knill executor synchronizes the adjacent `|0_L>` and `|+_L>`
+events for each teleportation: both short records are decoded first, and an
+extension requested by either patch sends both patches through their own
+same-shot extra suffix. `SimulationResult.bell_pair_stats` records the
+pair-level fallback and `z_only`/`x_only`/`both` diagnostic partition, while
+analysis per-shot data retain patch confidence and would-extend values.
+
+The fixed and adaptive Knill entry points accept `surface_code=False`; when
+true it is propagated to every state-preparation builder and selects the
+surface-code-specific stabilizer interaction ordering. The default remains
+the historical ordering. The fixed Knill entry point also accepts an optional
+`seed`, passed to Stim's compiled sampler; `None` preserves historical
+entropy-seeded behavior.
+
 Do not force third-party decoder classes to inherit from a Hex class. Use adapters/protocols/factories where possible.
 
 ## Important current state-preparation decoding semantics
@@ -357,7 +371,8 @@ Phases 4 and 5 add `simulation/policies.py`, `simulation/adaptive.py`, and
 confidence-driven short/long execution.  Result classes remain in
 `modularisation/results.py`.  The adaptive path is a correctness-first,
 one-shot reference implementation and is separate from the legacy static
-backend.
+backend. Pair execution uses a physical order of Z-short, X-short, Z-extra,
+X-extra and translates that record into logical Z/X decoder order.
 
 ## Result-data design principles
 
@@ -549,8 +564,9 @@ The present task creates `AGENTS.md`, `PLAN.md`, and `FUTURE.md`. The remaining 
 The local branch was checked on 2026-08-28.  Its Phase 0 `HEAD` was
 `2a3a309968d0f764510e076a70d0fa1e20d29da7`, matching the upstream snapshot
 recorded above.  Subsequent Phase 1–3 source changes are now present in
-commit `03d512c`; the Phase 4/5 adaptive files and
-development documentation remain local working-tree changes.  The source
+commits `03d512c`, `cc26813`, and `762a9f1`; the synchronized-pair,
+surface-code, BP-LSD validation, notebook, and documentation changes remain
+local working-tree changes. The source
 checkout is not installed as a `hex-qec` distribution in the baseline Python
 environment, so source-level smoke tests use `PYTHONPATH=src`.  The checked-in
 package requires `stimbposd`, which was initially absent from that environment
