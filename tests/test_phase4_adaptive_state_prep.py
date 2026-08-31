@@ -95,8 +95,10 @@ def test_surface_code_ordering_is_explicit_and_shared_by_fixed_adaptive_builders
 def test_schedule_validates_two_level_rounds():
     with pytest.raises(ValueError, match="at least 1"):
         AdaptiveSERounds(0, 1, AlwaysShortPolicy())
-    with pytest.raises(ValueError, match="no greater"):
+    with pytest.raises(ValueError, match="strictly less"):
         AdaptiveSERounds(3, 2, AlwaysShortPolicy())
+    with pytest.raises(ValueError, match="strictly less"):
+        AdaptiveSERounds(2, 2, AlwaysShortPolicy())
 
 
 def test_adaptive_state_prep_generator_accepts_multiple_block_supports():

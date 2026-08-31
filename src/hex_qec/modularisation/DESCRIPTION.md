@@ -236,7 +236,8 @@ does not change the static backend.
 ## Two-level state-preparation descriptions
 
 `AdaptiveSERounds(short_rounds, long_rounds, policy)` is a frozen configuration
-with the invariant `1 <= short_rounds <= long_rounds`. `AdaptivePolicy`,
+with the invariant `1 <= short_rounds < long_rounds`. Equal short/long depths
+are rejected because there is no extra adaptive suffix. `AdaptivePolicy`,
 `AlwaysShortPolicy`, and `AlwaysLongPolicy` live in `hex_qec.simulation`.
 
 `generate_adaptive_state_prep_module(...)` and

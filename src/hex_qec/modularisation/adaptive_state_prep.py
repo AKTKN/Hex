@@ -31,8 +31,8 @@ class AdaptiveSERounds:
     def __post_init__(self) -> None:
         if self.short_rounds < 1:
             raise ValueError("short_rounds must be at least 1")
-        if self.short_rounds > self.long_rounds:
-            raise ValueError("short_rounds must be no greater than long_rounds")
+        if self.short_rounds >= self.long_rounds:
+            raise ValueError("short_rounds must be strictly less than long_rounds")
 
 
 @dataclass

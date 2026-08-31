@@ -438,7 +438,7 @@ class AdaptiveSERounds:
 Validate:
 
 ```text
-1 <= short_rounds <= long_rounds
+1 <= short_rounds < long_rounds
 ```
 
 For the first implementation `short_rounds < long_rounds` should be the normal adaptive case.

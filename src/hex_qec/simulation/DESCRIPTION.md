@@ -49,7 +49,8 @@ event statistics or per-shot/debug payloads.
 ## Two-level state-preparation diagnostics
 
 `AdaptiveSERounds(short_rounds, long_rounds, policy)` validates
-`1 <= short_rounds <= long_rounds`. `AdaptiveStatePrepModule` composes:
+`1 <= short_rounds < long_rounds`; equal depths are rejected before circuit
+construction. `AdaptiveStatePrepModule` composes:
 
 ```text
 short_circuit: initialization + rounds 1..short_rounds

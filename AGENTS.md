@@ -344,6 +344,9 @@ Definitions:
 - `extra_rounds = long_rounds - short_rounds`;
 - long decoding sees all `long_rounds` measurement history.
 
+The current implementation requires `1 <= short_rounds < long_rounds` and
+rejects equal-depth schedules before adaptive circuit construction.
+
 Do not implement arbitrary repeated decisions (`r1 -> r2 -> r3 -> ...`) until the two-level implementation has passed compatibility and correctness tests.
 
 ## Planned architectural additions

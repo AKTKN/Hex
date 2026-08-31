@@ -209,6 +209,8 @@ confidence switching, synchronized one-patch fallback, and two Knill
 teleportations. No production sweep has been run. The BP-LSD regression logic
 covers four small syndromes and explicitly exercises a case where final
 cluster membership is larger than the selected recovery support.
+Adaptive schedules now reject `short_rounds >= long_rounds` at construction and
+the notebook preflight rejects all invalid configured points before simulation.
 
 ## Next recommended task
 

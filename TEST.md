@@ -534,3 +534,26 @@ No adaptive simulator or core-code refactor was implemented or tested.
     Outcome: PASS, 47 tests passed with 8 existing dependency deprecation
     warnings in 8.20 s. Python compilation, notebook JSON/code validation,
     and whitespace validation also passed. No production sweep was run.
+
+73. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py
+    tests/test_phase5_confidence_adaptive.py` after changing the adaptive
+    schedule invariant from `short_rounds <= long_rounds` to the strict
+    `short_rounds < long_rounds` rule and adding an equality regression.
+
+    Outcome: PASS, 22 tests passed with 8 existing dependency deprecation
+    warnings in 3.09 s.
+
+74. Notebook schedule preflight with the notebook code cells loaded and
+    overridden to `DISTANCES=[3]`, `SHORT_ROUNDS=[1, 3]`.
+
+    Outcome: PASS. The preflight rejected `(distance=3, short_rounds=3,
+    long_rounds=3)` before any simulation point was run.
+
+75. `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m compileall -q src
+    tests examples && python -m json.tool
+    notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` followed by
+    compilation of all notebook code cells and `git diff --check`.
+
+    Outcome: PASS, 47 tests passed with 8 existing dependency deprecation
+    warnings in 3.70 s. Python compilation, notebook JSON/code validation,
+    and whitespace validation also passed. The production sweep was not run.

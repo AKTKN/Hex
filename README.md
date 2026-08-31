@@ -1,5 +1,5 @@
 # Hex
-
+### Note: This repository is modified version of https://github.com/ewanmurphy/Hex. 
 `hex_qec` is a Python tool for building fault-tolerant quantum error-correction protocols from reusable circuit modules.
 
 The main idea is:
