@@ -622,6 +622,16 @@ class _AdaptiveShotRunner:
                 raise ValueError("adaptive policy must return one boolean per shot")
             return bool(decision[0])
 
+        # Generic pair-level control rule: each patch's own AdaptivePolicy
+        # interprets its own confidence (direction/threshold are policy
+        # responsibilities, e.g. ClusterLLRPolicy's risk-like `>` versus a
+        # metric where smaller means less confident), and the pair decision
+        # is the boolean OR of those two independent decisions. Do not
+        # replace this with a raw max/min comparison of the two patches'
+        # confidence values -- that would hard-code one metric's direction
+        # convention into the pair-level executor. `pair_risk`, computed
+        # below from confidence alone, is diagnostic metadata only and must
+        # never feed back into this decision.
         z_would_extend = policy_decision(z_description, z_short_decode)
         x_would_extend = policy_decision(x_description, x_short_decode)
         extend_pair = z_would_extend or x_would_extend
@@ -710,6 +720,10 @@ class _AdaptiveShotRunner:
 
         z_confidence = confidence(z_short_decode)
         x_confidence = confidence(x_short_decode)
+        # Diagnostic only: this max() assumes a risk-like convention (larger
+        # == less confident), which happens to be true for Cluster LLR. It
+        # is exposed for analysis/plotting and is never read back into
+        # `extend_pair` above.
         pair_risk = (
             max(z_confidence, x_confidence)
             if z_confidence is not None and x_confidence is not None
@@ -1067,6 +1081,30 @@ class StatefulAdaptiveKnillExecutor:
                 "would_extend": would_extend_matrix,
                 "used_long_pair": np.column_stack(
                     [used_long_matrix[:, z_index] for _, z_index, _ in pair_columns]
+                )
+                if pair_columns
+                else np.zeros((total_shots, 0), dtype=bool),
+                # Per-pair patch confidence/decision, named by state-basis
+                # convention (z == |0_L>, x == |+_L>) rather than combined:
+                # requirement is that patch-level decisions stay separate
+                # until the pair-level OR (see used_long_pair above).
+                "confidence_zero": np.column_stack(
+                    [confidence_matrix[:, z_index] for _, z_index, _ in pair_columns]
+                )
+                if pair_columns
+                else np.zeros((total_shots, 0)),
+                "confidence_plus": np.column_stack(
+                    [confidence_matrix[:, x_index] for _, _, x_index in pair_columns]
+                )
+                if pair_columns
+                else np.zeros((total_shots, 0)),
+                "would_extend_zero": np.column_stack(
+                    [would_extend_matrix[:, z_index] for _, z_index, _ in pair_columns]
+                )
+                if pair_columns
+                else np.zeros((total_shots, 0), dtype=bool),
+                "would_extend_plus": np.column_stack(
+                    [would_extend_matrix[:, x_index] for _, _, x_index in pair_columns]
                 )
                 if pair_columns
                 else np.zeros((total_shots, 0), dtype=bool),

@@ -1,7 +1,8 @@
 # `decoders`
 
-This package contains the decoder result type, compatibility adapters, and an
-optional BP-LSD adapter with a cluster-LLR soft output.
+This package contains the decoder result type, compatibility adapters, an
+optional BP-LSD adapter with a cluster-LLR soft output, and example
+`css_detector_module.confidence_aggregator` functions.
 
 ## `DecodeResult`
 
@@ -19,6 +20,20 @@ correction-variable vector for shot `i`; the remaining axis convention is
 chosen by the decoder/check matrix.  `confidence` and `converged` are optional
 and are interpreted only by the selected policy.  `metrics` preserves
 decoder-specific arrays without imposing a universal confidence definition.
+
+## `CSSInnerDecodeResults`
+
+`CSSInnerDecodeResults` is a `NamedTuple` with fields `x_dem`, `z_dem`,
+`x_capacity`, `z_capacity`, in that order.  `css_detector_module.c_func_rich`
+constructs one per decode call and passes it to `confidence_aggregator`
+instead of a bare list.  It behaves exactly like the historical
+4-element list (iterable, indexable, `len() == 4`, slice-compatible), so
+existing aggregators that treat it positionally keep working unchanged; the
+named fields let a new aggregator select DEM-only or code-capacity-only
+results explicitly instead of relying on positional order/slicing (`x_dem`/
+`z_dem` are the circuit-level DEM decodes of the repeated syndrome-extraction
+history; `x_capacity`/`z_capacity` are the code-capacity decodes of the final
+stabilizer signs -- the "stabilizer repair" step).
 
 ## Protocols
 
@@ -106,15 +121,17 @@ not need to inherit from a Hex class. The required procedure is:
    simulator only passes the `DecodeResult`; it does not know whether larger
    or smaller confidence means “extend”.
 5. If a CSS module has multiple inner decoder results, provide
-   `confidence_aggregator(results) -> ndarray` to combine their scalar
-   confidences into one value per shot.
+   `confidence_aggregator(results) -> ndarray` to combine the
+   `CSSInnerDecodeResults` scalar confidences into one value per shot. For
+   Cluster LLR, use `hex_qec.decoders.dem_only_max_confidence` (the current
+   default: DEM-only) rather than folding in the code-capacity results --
+   see "Confidence aggregation for adaptive switching" below.
 
 For example, BP-LSD with the adapter in this package can be connected as:
 
 ```python
-import numpy as np
 import pymatching
-from hex_qec.decoders import make_bplsd_decoder_generator
+from hex_qec.decoders import dem_only_max_confidence, make_bplsd_decoder_generator
 from hex_qec.modularisation import AdaptiveSERounds
 from hex_qec.protocols import knill_online_offline_adaptive
 from hex_qec.simulation import ClusterLLRPolicy
@@ -124,10 +141,6 @@ offline = make_bplsd_decoder_generator(
     alpha=2.0,
     # Additional ldpc BpLsdDecoder options may be supplied here.
 )
-
-def worst_css_cluster_llr(results):
-    values = [r.confidence for r in results if r.confidence is not None]
-    return np.max(np.stack(values), axis=0) if values else None
 
 result = knill_online_offline_adaptive(
     parity_check_tuple,
@@ -144,7 +157,7 @@ result = knill_online_offline_adaptive(
     max_errors_before_halting=10,
     pauli="z",
     num_teleportations=1,
-    confidence_aggregator=worst_css_cluster_llr,
+    confidence_aggregator=dem_only_max_confidence,
     detail_level="analysis",
 )
 ```
@@ -156,6 +169,35 @@ are risk-like, so `ClusterLLRPolicy` extends when the value is above its
 threshold. This convention belongs to the example policy, not to the generic
 decoder protocol. For a different decoder, replace the adapter and policy
 while retaining the same batch shape and generator boundary.
+
+## Confidence aggregation for adaptive switching
+
+`hex_qec.decoders.aggregators` provides two optional, risk-like (larger ==
+less confident) example aggregators over `CSSInnerDecodeResults`:
+
+- `dem_only_max_confidence(results)`: `max(x_dem.confidence,
+  z_dem.confidence)`. This is the **current default** confidence source for
+  adaptive SE-round switching (see `modularisation/DESCRIPTION.md` and
+  `STATUS.md`). Code-capacity (`x_capacity`/`z_capacity`) confidence is
+  intentionally excluded: those decoders currently use a uniform,
+  non-circuit-derived prior, so there is no established calibration for
+  combining their confidence with DEM confidence. The code-capacity decoders
+  still compute and return their own confidence -- this capability is not
+  removed -- it is simply not read by this aggregator.
+- `all_components_max_confidence(results)`: `max` over all four results.
+  This is **not** the current default and is **not** theoretically
+  justified as a stopping metric; it is kept only for diagnostic/
+  experimental comparison against the DEM-only default. See `FUTURE.md`,
+  "Code-capacity confidence for adaptive state preparation".
+
+Both are optional, metric-specific helpers, not part of the generic decoder
+or policy protocol -- `confidence_aggregator` accepts any
+`Callable[[CSSInnerDecodeResults], ndarray | None]`, and a different
+decoder/metric should bring its own aggregator rather than reuse these
+verbatim. Neither `css_detector_module` nor `knill_online_offline_adaptive`
+supplies a built-in default; omitting `confidence_aggregator` leaves
+`DecodeResult.confidence` as `None`, which policies such as
+`ClusterLLRPolicy` reject.
 
 The cluster membership used in the LLR is the final LSD cluster membership,
 not the support of the selected recovery.  If an installed `ldpc` exposes

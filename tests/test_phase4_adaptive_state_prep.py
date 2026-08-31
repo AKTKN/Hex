@@ -8,8 +8,14 @@ from hex_qec.modularisation import (
     generate_adaptive_state_prep_module,
     generate_adaptive_state_prep_modules,
 )
-from hex_qec.modularisation.module_generation import generate_state_prep_modules
+from hex_qec.modularisation.module_generation import (
+    generate_logical_measurement_module,
+    generate_state_prep_modules,
+)
 from hex_qec.modularisation.results import normalize_module_decode_output
+from hex_qec.circuit_generation.circuit_generation import (
+    stabilizer_measurement_circuit_both_detectors,
+)
 from hex_qec.simulation import (
     AdaptivePolicyContext,
     AlwaysLongPolicy,
@@ -90,6 +96,46 @@ def test_surface_code_ordering_is_explicit_and_shared_by_fixed_adaptive_builders
                 target.is_qubit_target and target.qubit_value in data_qubits
                 for target in instruction.targets_copy()
             )
+
+
+def test_surface_code_stabilizer_diagnostics_are_debug_only(capsys):
+    parity_checks = get_parity_check_matrices("surface", 3)
+
+    stabilizer_measurement_circuit_both_detectors(
+        parity_checks, "z", 1, 0.0, surface_code=True
+    )
+    assert capsys.readouterr().out == ""
+
+    stabilizer_measurement_circuit_both_detectors(
+        parity_checks, "z", 1, 0.0, surface_code=True, debug=True
+    )
+    output = capsys.readouterr().out
+    assert "measure_X_stabilizers_surface_code!!!!" in output
+    assert "measure_Z_stabilizers_surface_code!!!!" in output
+
+
+def test_logical_measurement_qubit_diagnostic_is_debug_only(capsys):
+    parity_checks = get_parity_check_matrices("surface", 3)
+    support = list(range(9))
+
+    generate_logical_measurement_module(
+        parity_checks,
+        0.0,
+        "z",
+        support,
+        pymatching.Matching.from_check_matrix,
+    )
+    assert capsys.readouterr().out == ""
+
+    generate_logical_measurement_module(
+        parity_checks,
+        0.0,
+        "z",
+        support,
+        pymatching.Matching.from_check_matrix,
+        debug=True,
+    )
+    assert capsys.readouterr().out == "Code number qubits: 9\n"
 
 
 def test_schedule_validates_two_level_rounds():

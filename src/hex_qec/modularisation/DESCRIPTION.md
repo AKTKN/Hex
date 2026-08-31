@@ -68,6 +68,20 @@ are counts of synchronized Bell-pair decisions, so
 fields classify which patch first requested extension.  `mean_effective_rounds`
 is the measured mean of the selected short/long depth over pair shots.
 
+At `detail_level="analysis"`/`"debug"`, `SimulationResult.per_shot` retains,
+per synchronized pair, `confidence_zero`/`confidence_plus` (each patch's own
+aggregated confidence, named by state-basis convention: `z` == `|0_L>`,
+`x` == `|+_L>`) and `would_extend_zero`/`would_extend_plus` (each patch's own
+`AdaptivePolicy.should_extend(...)` boolean), in addition to the existing
+`used_long_pair`.  `used_long_pair` always equals `would_extend_zero |
+would_extend_plus` -- the pair-level control rule is a boolean OR of the two
+independent per-patch policy decisions, never a raw max/min of their
+confidence values (that combination is diagnostic-only; see `pair_risk`
+below).  These per-pair arrays are derived views over the generic per-event
+`confidence`/`would_extend`/`used_long` arrays (also retained, indexed by
+`event_id`/`teleportation_index`/`state_basis`), which are not collapsed
+before the individual policies are evaluated.
+
 ## Module classes
 
 ### `no_measurement_module`
@@ -164,11 +178,20 @@ generation step, not by the constructor alone.
 The legacy `c_func` returns only the correction ndarray. `c_func_rich` runs
 the same correction calculation and returns a `ModuleDecodeResult`, retaining
 decoder-specific metrics under namespaced keys such as
-`x_dem.cluster_llr` and `z_dem.cluster_llr`. When supplied, the optional
-`confidence_aggregator` combines the four inner `DecodeResult.confidence`
-arrays into the module-level confidence passed to an adaptive policy. The
-static engine continues using `c_func` and therefore does not consume these
-fields.
+`x_dem.cluster_llr` and `z_dem.cluster_llr` -- these keys are populated for
+all four inner decoders unconditionally, including `x_capacity.*`/
+`z_capacity.*`, regardless of which results `confidence_aggregator` reads.
+When supplied, the optional `confidence_aggregator` receives one
+`hex_qec.decoders.CSSInnerDecodeResults` (the four inner `x_dem`/`z_dem`/
+`x_capacity`/`z_capacity` `DecodeResult`s, named so an aggregator does not
+have to rely on positional order) and combines their `.confidence` arrays
+into the module-level confidence passed to an adaptive policy. The static
+engine continues using `c_func` and therefore does not consume these fields.
+`hex_qec.decoders` provides `dem_only_max_confidence` (DEM-only; the current
+default for adaptive switching) and `all_components_max_confidence`
+(diagnostic-only, folds in code-capacity confidence); see
+`decoders/DESCRIPTION.md` and `FUTURE.md`, "Code-capacity confidence for
+adaptive state preparation".
 
 ### `logical_measurement_module`
 
@@ -262,7 +285,9 @@ for both `|0_L>` and `|+_L>` preparations across multiple teleportations.
 
 - `generate_logical_measurement_module` builds noisy `M`/`MX` circuits,
   decodes raw measurements against the selected logical/check matrices, and
-  returns a `logical_measurement_module`.
+  returns a `logical_measurement_module`. Its optional `debug` argument
+  controls the construction-time qubit-count diagnostic; normal simulation
+  calls leave it disabled and produce no diagnostic output.
 - `generate_state_prep_modules` builds one both-detector repeated-SE circuit,
   partitions detector indices by preparation basis and round, constructs one
   `css_detector_module` template, deep-copies it for each support, and returns

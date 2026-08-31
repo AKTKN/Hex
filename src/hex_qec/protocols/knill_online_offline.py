@@ -155,6 +155,23 @@ def knill_online_offline_adaptive(
     The legacy ``knill_online_offline`` function remains the static compiled
     backend.  This separate entry point uses the stateful reference executor
     and accepts a policy through ``adaptive_schedule``.
+
+    ``confidence_aggregator`` receives one ``CSSInnerDecodeResults`` (the
+    four inner ``x_dem``/``z_dem``/``x_capacity``/``z_capacity`` decode
+    results) per state-preparation patch and must return one confidence
+    value per shot; it is required for policies such as ``ClusterLLRPolicy``
+    that read ``DecodeResult.confidence``.  ``hex_qec.decoders`` provides
+    ``dem_only_max_confidence`` as the current, theoretically-justified
+    default (DEM-only) and ``all_components_max_confidence`` as a
+    diagnostic-only alternative that also folds in code-capacity confidence;
+    see ``FUTURE.md``, "Code-capacity confidence for adaptive state
+    preparation", for why the latter is not the default.
+
+    Each teleportation's ``|0_L>`` and ``|+_L>`` patches are decoded and
+    policy-evaluated independently; the synchronized pair decision is the
+    boolean OR of their individual ``policy.should_extend(...)`` results,
+    never a raw max/min comparison of their confidence values.  That OR is
+    the generic pair-level control rule for every policy/metric.
     """
     from hex_qec.simulation import StatefulAdaptiveKnillExecutor
 

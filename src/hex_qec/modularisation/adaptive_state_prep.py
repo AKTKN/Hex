@@ -15,6 +15,7 @@ from numpy import ndarray
 import stim
 
 from hex_qec.circuit_generation import stabilizer_measurement_circuit_both_detectors
+from hex_qec.decoders import CSSInnerDecodeResults
 from hex_qec.simulation.policies import AdaptivePolicy
 
 from .modularised_circuit import css_detector_module
@@ -189,7 +190,7 @@ def generate_adaptive_state_prep_modules(
     surface_code: bool = False,
     event_id_prefix: str | None = None,
     teleportation_index: int | None = None,
-    confidence_aggregator: Callable[[list[object]], ndarray | None] | None = None,
+    confidence_aggregator: Callable[[CSSInnerDecodeResults], ndarray | None] | None = None,
 ) -> list[AdaptiveStatePrepModule]:
     """Build adaptive descriptions for one or more encoded-block supports."""
 
@@ -262,7 +263,7 @@ def generate_adaptive_state_prep_module(
     surface_code: bool = False,
     event_id: str | None = None,
     teleportation_index: int | None = None,
-    confidence_aggregator: Callable[[list[object]], ndarray | None] | None = None,
+    confidence_aggregator: Callable[[CSSInnerDecodeResults], ndarray | None] | None = None,
 ) -> AdaptiveStatePrepModule:
     """Build one adaptive state-preparation description."""
 

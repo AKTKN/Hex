@@ -213,6 +213,41 @@ The future implementation should expose the decoder role and the effective
 prior source explicitly, while preserving the legacy
 `decoder_generator(check_matrix, weights=...)` interface.
 
+# 3.2 Code-capacity confidence for adaptive state preparation
+
+The current implementation may compute confidence for the final code-capacity
+repair decoders (`x_capacity`/`z_capacity` in `CSSInnerDecodeResults`), but
+this confidence is intentionally excluded from the adaptive SE-round stopping
+decision: `hex_qec.decoders.dem_only_max_confidence` is the current default
+`confidence_aggregator` and reads only the `x_dem`/`z_dem` results.
+
+Future work should investigate whether code-capacity confidence contains
+useful information about:
+
+- reliability of the selected repair frame;
+- ambiguity of the inferred stabilizer sector;
+- downstream logical failure probability;
+- joint confidence combining spacetime DEM decoding and final repair decoding.
+
+This requires a principled definition/calibration before it is used for
+adaptive control. In particular, the current uniform code-capacity error
+prior (see 3.1 above) is not a circuit-derived effective prior, so directly
+combining its confidence with DEM confidence is not yet theoretically
+justified. `hex_qec.decoders.all_components_max_confidence` exists only as a
+diagnostic/experimental comparison point against the DEM-only default -- it
+folds in the code-capacity results with an unweighted `max` and should not be
+treated as a validated stopping metric.
+
+Potential future designs include:
+
+- calibrated combination of DEM and code-capacity confidence;
+- confidence conditioned on repair-frame class;
+- a confidence metric directly targeting competing state-preparation
+  interpretations / repair frames.
+
+Do not implement these future-work ideas without a dedicated task; this
+section only records the exclusion and the open questions around it.
+
 # 4. Post-hoc threshold and policy sweeps
 
 If per-shot short confidence and final outcome are recorded, many policies can be evaluated without rerunning all physical simulations.

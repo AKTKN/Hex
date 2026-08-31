@@ -141,8 +141,9 @@ def measure_X_stabilizers(circuit, x_stabilizers, block, prob):
     circuit.append("H", x_ancilla_qubits)  # X measurement
     circuit.append("MR", x_ancilla_qubits)
 
-def measure_X_stabilizers_surface_code(circuit, x_stabilizers, block, prob):
-    print("measure_X_stabilizers_surface_code!!!!")
+def measure_X_stabilizers_surface_code(circuit, x_stabilizers, block, prob, debug=False):
+    if debug:
+        print("measure_X_stabilizers_surface_code!!!!")
     two_qubit_error = prob
     ancilla_error = prob
     data_qubits = block["data_qubits"]
@@ -209,8 +210,9 @@ def measure_Z_stabilizers(circuit, z_stabilizers, block, prob):
     circuit.append("H", z_ancilla_qubits)  # Z measurement
     circuit.append("MR", z_ancilla_qubits)
 
-def measure_Z_stabilizers_surface_code(circuit, z_stabilizers, block, prob):
-    print("measure_Z_stabilizers_surface_code!!!!")
+def measure_Z_stabilizers_surface_code(circuit, z_stabilizers, block, prob, debug=False):
+    if debug:
+        print("measure_Z_stabilizers_surface_code!!!!")
     two_qubit_error = prob
     ancilla_error = prob
     data_qubits = block["data_qubits"]
@@ -332,8 +334,8 @@ def stabilizer_measurement_circuit(
 
     # First found of stabilizer measurement
     if surface_code:
-        measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob)
-        measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob)
+        measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob, debug=debug)
+        measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob, debug=debug)
     else:
         measure_X_stabilizers(circ, x_stabilizers, block, prob)
         measure_Z_stabilizers(circ, z_stabilizers, block, prob)
@@ -350,8 +352,8 @@ def stabilizer_measurement_circuit(
 
     for syndrome_repetition in range(2, syndrome_repetitions+1):
         if surface_code:
-            measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob)
-            measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob)
+            measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob, debug=debug)
+            measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob, debug=debug)
         else:
             measure_X_stabilizers(circ, x_stabilizers, block, prob)
             measure_Z_stabilizers(circ, z_stabilizers, block, prob)
@@ -413,8 +415,8 @@ def stabilizer_measurement_circuit_both_detectors(
 
     # First found of stabilizer measurement
     if surface_code:
-        measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob)
-        measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob)
+        measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob, debug=debug)
+        measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob, debug=debug)
     else:
         measure_X_stabilizers(circ, x_stabilizers, block, prob)
         measure_Z_stabilizers(circ, z_stabilizers, block, prob)
@@ -431,8 +433,8 @@ def stabilizer_measurement_circuit_both_detectors(
 
     for syndrome_repetition in range(2, syndrome_repetitions+1):
         if surface_code:
-            measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob)
-            measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob)
+            measure_X_stabilizers_surface_code(circ, x_stabilizers, block, prob, debug=debug)
+            measure_Z_stabilizers_surface_code(circ, z_stabilizers, block, prob, debug=debug)
         else:
             measure_X_stabilizers(circ, x_stabilizers, block, prob)
             measure_Z_stabilizers(circ, z_stabilizers, block, prob)

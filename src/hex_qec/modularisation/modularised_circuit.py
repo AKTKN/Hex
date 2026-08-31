@@ -17,6 +17,7 @@ from collections import defaultdict
 import json
 import logging
 from hex_qec.decoders import (
+    CSSInnerDecodeResults,
     DecodeResult,
     LegacyDecoderAdapter,
     LegacyDecoderGeneratorAdapter,
@@ -106,7 +107,7 @@ class css_detector_module():
                  z_detectors : List[int],
                  new_support : List[int] = [],
                  matchable : bool = True,
-                 confidence_aggregator: Callable[[List[DecodeResult]], ndarray | None] | None = None,
+                 confidence_aggregator: Callable[[CSSInnerDecodeResults], ndarray | None] | None = None,
                  ) -> None:
         self.circuit = circuit
         self.num_measurements = circuit.num_measurements
@@ -382,7 +383,7 @@ class css_detector_module():
             self.z_dem_correction_to_local_detector_flips = gf2_matmul_csc(self.z_dem_hyperedge_to_edge, self.z_dem_correction_to_local_detector_flips)
             self.z_dem_correction_to_local_measurement_flips = gf2_matmul_csc(self.z_dem_hyperedge_to_edge, self.z_dem_correction_to_local_measurement_flips)
 
-        def decode_impl(measurement_samples: ndarray) -> tuple[ndarray, list[DecodeResult]]:
+        def decode_impl(measurement_samples: ndarray) -> tuple[ndarray, CSSInnerDecodeResults]:
 
             x_m2d_converter = self.x_det_circuit.compile_m2d_converter()
             x_detector_flips, x_observable_values = x_m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
@@ -422,12 +423,15 @@ class css_detector_module():
                 correction_for_x_stabilizers,
                 correction_for_z_stabilizers,
             ])
-            return combined_corrections, [
-                x_dem_result,
-                z_dem_result,
-                x_result,
-                z_result,
-            ]
+            # Named so a confidence_aggregator can select DEM-only or
+            # code-capacity-only results explicitly rather than relying on
+            # positional order (see CSSInnerDecodeResults docstring).
+            return combined_corrections, CSSInnerDecodeResults(
+                x_dem=x_dem_result,
+                z_dem=z_dem_result,
+                x_capacity=x_result,
+                z_capacity=z_result,
+            )
 
         def c_func(measurement_samples: ndarray) -> ndarray:
             return decode_impl(measurement_samples)[0]

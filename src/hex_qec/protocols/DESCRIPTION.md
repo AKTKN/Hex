@@ -81,12 +81,21 @@ ancilla.
 `knill_online_offline_adaptive(...)` accepts an `AdaptiveSERounds` object
 instead of a fixed integer. For every teleportation it creates adaptive
 `|0_L>` and `|+_L>` events. The stateful executor decodes both short records
-before making one synchronized Bell-pair decision: if either patch requests
-extension, both patches continue on their existing physical simulator state
-and decode their full long histories. The optional
-`confidence_aggregator` receives the four inner CSS `DecodeResult` objects and
-returns the module-level confidence array, keeping metric selection out of
-the simulator.
+before making one synchronized Bell-pair decision: each patch's confidence is
+evaluated by its own `AdaptivePolicy.should_extend(...)` independently, and
+the pair decision is the boolean OR of those two per-patch booleans -- never
+a raw max/min comparison of their confidence values. This is the generic
+pair-level control rule regardless of metric/policy direction; if either
+patch requests extension, both patches continue on their existing physical
+simulator state and decode their full long histories. The optional
+`confidence_aggregator` receives one `CSSInnerDecodeResults` (the four inner
+CSS `DecodeResult` objects, named `x_dem`/`z_dem`/`x_capacity`/`z_capacity`)
+per patch and returns the module-level confidence array, keeping metric
+selection out of the simulator. `hex_qec.decoders.dem_only_max_confidence`
+(DEM-only) is the current default for the adaptive-SE experiment;
+`all_components_max_confidence` also folds in code-capacity confidence and is
+diagnostic-only -- see `decoders/DESCRIPTION.md` and `FUTURE.md`,
+"Code-capacity confidence for adaptive state preparation".
 
 Both `knill_online_offline(...)` and `knill_online_offline_adaptive(...)`
 accept `surface_code=False`. Passing `True` selects the surface-code-specific

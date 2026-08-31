@@ -557,3 +557,119 @@ No adaptive simulator or core-code refactor was implemented or tested.
     Outcome: PASS, 47 tests passed with 8 existing dependency deprecation
     warnings in 3.70 s. Python compilation, notebook JSON/code validation,
     and whitespace validation also passed. The production sweep was not run.
+
+76. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py
+    tests/test_phase5_confidence_adaptive.py && PYTHONPATH=src python -m
+    compileall -q src tests && git diff --check` after making the surface-code
+    stabilizer diagnostic messages debug-only.
+
+    Outcome: PASS, 23 tests passed with 8 existing dependency deprecation
+    warnings in 5.67 s. Python compilation and whitespace validation also
+    passed.
+
+77. `PYTHONPATH=src pytest -q` after making the surface-code stabilizer
+    diagnostic messages debug-only.
+
+    Outcome: PASS, 48 tests passed with 8 existing dependency deprecation
+    warnings in 5.38 s.
+
+78. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py` after
+    making the logical-measurement qubit-count diagnostic debug-only.
+
+    Outcome: PASS, 12 tests passed with 8 existing dependency deprecation
+    warnings in 1.46 s.
+
+79. `PYTHONPATH=src pytest -q` after making the logical-measurement
+    qubit-count diagnostic debug-only.
+
+    Outcome: PASS, 49 tests passed with 8 existing dependency deprecation
+    warnings in 4.93 s.
+
+80. `PYTHONPATH=src python -m compileall -q src tests` followed by
+    `git diff --check`.
+
+    Outcome: PASS. Python compilation and whitespace validation passed.
+
+## Confidence-workflow audit (adaptive state preparation)
+
+81. `PYTHONPATH=src python -m compileall -q src tests examples` after adding
+    `hex_qec.decoders.CSSInnerDecodeResults`,
+    `hex_qec.decoders.aggregators` (`dem_only_max_confidence`,
+    `all_components_max_confidence`), the `CSSInnerDecodeResults` return type
+    in `css_detector_module.c_func_rich`, and the new
+    `confidence_zero`/`confidence_plus`/`would_extend_zero`/
+    `would_extend_plus` per-shot fields in
+    `StatefulAdaptiveKnillExecutor.simulate_result`.
+
+    Outcome: PASS. Python compilation completed with no output (success).
+
+82. `PYTHONPATH=src pytest -q tests/test_phase5_confidence_adaptive.py` after
+    adding `test_css_inner_decode_results_is_list_compatible`,
+    `test_dem_only_default_excludes_code_capacity_confidence`,
+    `test_bell_pair_patch_independence_and_or_synchronization` (parametrized
+    over the four zero/plus extend combinations),
+    `test_pair_or_logic_is_agnostic_to_confidence_direction` (parametrized
+    over which basis has the "low" synthetic score under a dummy inverted-
+    direction policy).
+
+    Outcome: PASS, 20 tests passed (12 previous + 8 new) with 8 existing
+    dependency deprecation warnings in 3.52 s.
+
+83. `PYTHONPATH=src pytest -q` (full local suite) after the same changes.
+
+    Outcome: PASS, 57 tests passed (49 previous + 8 new) with 8 existing
+    dependency deprecation warnings in 4.58 s.
+
+84. Direct exploratory probes of `dem_only_max_confidence` under the
+    notebook's `BPLSD_OPTIONS` (`bp_method="minimum_sum"`, `max_iter=30`) at
+    surface `d=3`: 20+ seeds at `short_rounds=1` and `short_rounds=2`,
+    `physical_error` up to 0.3, threshold down to `1e-9`.
+
+    Outcome: PASS as a diagnostic probe (no assertion failures; this
+    characterized behavior, it did not test a requirement). DEM-only Cluster
+    LLR confidence was identically zero in every case: BP alone (with these
+    specific options) reliably converges on the small `d=3` DEM check
+    matrix, so BP-LSD's LSD stage never forms an active cluster regardless
+    of noise. The same formula without `BPLSD_OPTIONS`, and at
+    `short_rounds=2` with `d=5` (the production sweep's configuration),
+    both produced genuine nonzero DEM-only confidence in separate probes.
+    Recorded as a smoke-scale/decoder-option artifact in `STATUS.md`, not a
+    defect; the notebook's validation cell now asserts this contrast
+    directly (`dem_only_max_confidence` gives zero switching,
+    `all_components_max_confidence` still switches) instead of assuming
+    DEM-only must switch at this tiny configuration.
+
+85. `PYTHONPATH=src python3 -c "..."` execution of the actual notebook file
+    `notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb`, extracting
+    and `exec`-ing its code cells 0 through 7 (imports/metadata, helpers,
+    decoder-factory/aggregator definitions, fixed-point/sweep functions,
+    adaptive-point/sweep functions, plotting-helper definitions, the
+    revised `validate_small_configuration()` cell, and the benchmark cell);
+    cells 8-9 (the opt-in production sweep and its plot) were not run.
+
+    Outcome: PASS. Printed "All small fixed/adaptive validation checks
+    passed." (covering F1-F8, including the new F3/F4 DEM-only-vs-
+    all-components contrast and F7's mocked code-capacity-exclusion check)
+    and the benchmark cell's timing dict, with no exceptions.
+
+86. `PYTHONPATH=src timeout 60 python3 examples/bplsd_adaptive_knill.py`
+    after switching its wired `confidence_aggregator` from an inline
+    `max_decoder_confidence` (all four results) to the shipped
+    `dem_only_max_confidence`.
+
+    Outcome: PASS. Printed a `SimulationSummary` and two
+    `AdaptiveStatePrepStats` records; the `z`-basis patch showed 2 long
+    shots out of 256 with nonzero DEM-only confidence
+    (`confidence_summary={'mean': ..., 'max': 0.31855626170940876, ...}`),
+    confirming the DEM-only default triggers real switching under this
+    script's plain (non-`BPLSD_OPTIONS`) decoder settings.
+
+87. `python -m json.tool notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb`
+    followed by compiling every code cell and `PYTHONPATH=src python -m
+    compileall -q src tests examples && git diff --check` after all
+    documentation updates (`STATUS.md`, this file, `FUTURE.md`,
+    `decoders/DESCRIPTION.md`, `modularisation/DESCRIPTION.md`,
+    `protocols/DESCRIPTION.md`).
+
+    Outcome: PASS. Notebook JSON parsing and all 10 code-cell compilations
+    passed; Python compilation and whitespace validation also passed.

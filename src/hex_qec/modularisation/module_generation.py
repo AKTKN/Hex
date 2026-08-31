@@ -20,12 +20,14 @@ def generate_logical_measurement_module(
         pauli: str,
         new_support: List[int],
         decoder_generator: Callable[[ndarray], Callable[[ndarray], ndarray]],
-        expected_logical_values: List[int] = []
+        expected_logical_values: List[int] = [],
+        debug: bool = False,
 ):
     (x_pcm, z_pcm, x_logical, z_logical) = parity_check_tuple
     k = x_logical.shape[0]
     num_qubits = x_pcm.shape[1]
-    print(f"Code number qubits: {num_qubits}")
+    if debug:
+        print(f"Code number qubits: {num_qubits}")
     # k logical values should be provided
     if len(expected_logical_values) == 0:
         # Default the expected logical values to zero

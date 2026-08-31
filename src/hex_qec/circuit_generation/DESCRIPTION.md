@@ -76,7 +76,8 @@ The following helpers append operations to a supplied `stim.Circuit`:
   insert `DEPOLARIZE2(prob)` after each interaction, and measure/reset the
   ancillas with `MR`.
 - The `_surface_code` variants use special interaction ordering for weight-2
-  and weight-4 checks.  They also print a diagnostic line when called.  The
+  and weight-4 checks.  Their diagnostic messages are controlled by the
+  parent builder's `debug` argument and are silent in normal simulation.  The
   normal protocol path leaves `surface_code=False`.
 - `transversal_cnot(circuit, first_block, second_block, prob)` appends one
   physical CNOT per pair of data qubits and one multi-target `DEPOLARIZE2`

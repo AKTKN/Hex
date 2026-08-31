@@ -54,6 +54,12 @@ Base commit: `762a9f1` (`feat: Implement adaptive state preparation in Knill pro
 - Added the smoke-sized experiment driver
   `notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb`; it is opt-in and
   does not run production sweeps.
+- Made the surface-code stabilizer-construction diagnostics conditional on
+  `debug=True`; ordinary simulation/circuit construction is now silent while
+  the diagnostic messages remain available for explicit debugging.
+- Made the logical-measurement `Code number qubits: ...` diagnostic
+  conditional on `debug=True` as well, so normal protocol construction and
+  simulation no longer emit it.
 - Integrated the adapters into existing decoder call sites while preserving
   historical input casts and scalar-fallback output dtypes.
 - Added focused tests under `tests/test_phase1_decoder_adapters.py`.
@@ -61,6 +67,100 @@ Base commit: `762a9f1` (`feat: Implement adaptive state preparation in Knill pro
 - Verified the legacy adapter with tiny PyMatching, BP, and BP-OSD decoders;
   the installed ldpc version requires `input_vector_type='syndrome'`.
 - Made no changes to core numerical, physical-noise, or correction behavior.
+- Audited and corrected the confidence workflow used by adaptive state
+  preparation (see "Confidence workflow audit" below).  The Bell-pair
+  synchronized OR decision (`extend_pair = would_extend_zero OR
+  would_extend_plus`, computed from each patch's own `AdaptivePolicy`
+  boolean) was already correct and unchanged.  Added
+  `hex_qec.decoders.CSSInnerDecodeResults` (a `NamedTuple` replacing the
+  four-element list `confidence_aggregator` previously received) and two
+  example aggregators, `dem_only_max_confidence` (now the current default
+  for adaptive switching: DEM-only) and `all_components_max_confidence`
+  (diagnostic-only, retained but explicitly labeled as not theoretically
+  justified).  Added `confidence_zero`/`confidence_plus`/
+  `would_extend_zero`/`would_extend_plus` per-pair arrays to
+  `SimulationResult.per_shot` alongside the existing `used_long_pair`.
+  Updated `examples/bplsd_adaptive_knill.py` and
+  `notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` to use the
+  DEM-only default and to validate the code-capacity exclusion directly.
+  Added tests under `tests/test_phase5_confidence_adaptive.py` for
+  code-capacity exclusion, patch independence/OR synchronization, and a
+  dummy inverted-direction policy proving the pair executor never assumes
+  a Cluster-LLR-style raw `max(...) > threshold` rule.
+
+## Confidence workflow audit (adaptive state preparation)
+
+Confidence flow, from inner decoder to physical continuation:
+
+```text
+decoder-specific soft outputs (per css_detector_module decode call)
+    -> CSSInnerDecodeResults(x_dem, z_dem, x_capacity, z_capacity)
+    -> confidence_aggregator(results) -> ndarray | None
+         (DEM-only default: dem_only_max_confidence;
+          diagnostic-only: all_components_max_confidence)
+    -> css_detector_module.c_func_rich -> DecodeResult.confidence
+    -> AdaptivePolicy.should_extend(decode_result, context=...)
+         (metric-specific direction/threshold, e.g. ClusterLLRPolicy's
+         risk-like `cluster_llr > threshold`)
+    -> would_extend_zero / would_extend_plus (independent per patch)
+    -> used_long_pair = would_extend_zero OR would_extend_plus
+    -> both |0_L> and |+_L> patches continue to the same selected depth
+```
+
+Findings and decisions from the audit:
+
+1. The pair-level OR behavior (`StatefulAdaptiveKnillExecutor`'s
+   `_run_adaptive_pair` in `src/hex_qec/simulation/adaptive.py`) already
+   computed `extend_pair = z_would_extend or x_would_extend` from two
+   independent `policy.should_extend(...)` calls -- never a raw
+   `max`/`min` of the two patches' confidence values.  The only `max()` in
+   that path builds `pair_risk`, which is explicitly diagnostic metadata
+   (`AdaptiveEventObservation.pair_risk` /
+   `AdaptiveBellPairStats.mean_*_patch_risk`) and was never read back into
+   the decision.  This behavior is preserved unchanged; only clarifying
+   comments were added at both sites.
+2. Code-capacity confidence exclusion was not previously enforced by any
+   default: `confidence_aggregator` has no built-in default anywhere (by
+   design -- see decoders/DESCRIPTION.md, "do not create a generic
+   framework assumption that all confidence metrics should use max"), so a
+   caller supplying no aggregator gets `confidence=None`.  What changed is
+   which *example* aggregator is treated as the current experiment
+   default: `dem_only_max_confidence` (DEM-only) replaces
+   `all_components_max_confidence`/the notebook's old ad hoc
+   `worst_css_cluster_llr`-style helper in the notebook, the BP-LSD
+   example script, and the DESCRIPTION.md integration example.
+   Code-capacity confidence is still computed unconditionally inside
+   `c_func_rich`'s `metrics` dict (`x_capacity.cluster_llr`,
+   `z_capacity.cluster_llr`) regardless of which aggregator is selected;
+   it is simply not read by the default aggregator, and the adaptive
+   per-shot result does not currently forward those `metrics` values (only
+   the aggregated `confidence` is retained per shot).
+3. Introduced `CSSInnerDecodeResults` (`hex_qec/decoders/base.py`) so a
+   `confidence_aggregator` can select `results.x_dem`/`results.z_dem`/
+   etc. by name instead of positional slicing (`results[:2]`).  It is a
+   drop-in, backward-compatible replacement for the historical
+   four-element list: iteration, indexing, slicing, and `len()` all behave
+   identically, so every existing aggregator (`worst_css_cluster_llr`-style
+   callables in tests/examples) kept working unchanged.
+4. A smoke-scale finding surfaced while validating the notebook: at the
+   validation cell's tiny `distance=3`, `short_rounds=1` configuration,
+   with the notebook's configured `BPLSD_OPTIONS`
+   (`bp_method="minimum_sum"`, `max_iter=30`), BP alone reliably converges
+   on the small DEM check matrix, so DEM-only Cluster LLR confidence is
+   identically zero there regardless of physical error rate or seed (0
+   nonzero draws in 20+ probed seeds at `physical_error=0.3`).  This is a
+   property of that particular decoder-option/distance/round combination,
+   not a defect in `dem_only_max_confidence`: the same formula (without
+   `BPLSD_OPTIONS`) and the production sweep's `distance=5,
+   short_rounds=2` configuration both produce genuine nonzero DEM-only
+   confidence (confirmed via `examples/bplsd_adaptive_knill.py` and the
+   notebook's own previously recorded `max_dem_only` sweep rows). The
+   validation cell now documents and exploits this directly: it contrasts
+   `dem_only_max_confidence` (correctly producing zero switching at that
+   tiny configuration) against `all_components_max_confidence`
+   (diagnostic-only, still switching because it reads code-capacity
+   confidence) as a positive demonstration of the intended exclusion,
+   rather than asserting an unconditional "must switch".
 
 ## Current implementation
 
@@ -156,6 +256,10 @@ detectors, 12 Z detectors, and matchable DEM check shapes `(8, 21)` and
 - The notebook records and passes stable parameter-derived seeds to both engines; Stim
   documents seeded results as version- and machine-dependent, so seeds provide
   reproducible local provenance rather than a cross-version guarantee.
+- A notebook that was previously executed can retain the old diagnostic text
+  in its saved output cells; clearing outputs or rerunning the cells is needed
+  to remove stale captured output. The notebook itself was not rewritten as
+  part of this source-only change.
 
 ## Phase 3 validation
 
@@ -212,10 +316,34 @@ cluster membership is larger than the selected recovery support.
 Adaptive schedules now reject `short_rounds >= long_rounds` at construction and
 the notebook preflight rejects all invalid configured points before simulation.
 
+## Confidence-workflow audit validation
+
+`PYTHONPATH=src pytest -q` passes 57 tests (49 previous + 8 new confidence-
+workflow tests) with the existing eight dependency deprecation warnings.  The
+new tests in `tests/test_phase5_confidence_adaptive.py` cover:
+`CSSInnerDecodeResults` list-compatibility; `dem_only_max_confidence`
+excluding poor mocked code-capacity confidence while still responding to
+poor DEM confidence; the four zero/plus patch-confidence combinations
+(parametrized) reducing to a synchronized OR decision with
+`selected_rounds_zero == selected_rounds_plus`; and a dummy inverted-
+direction (`smaller == less confident`) policy still combining correctly at
+the pair level via OR, proving the executor never assumes a Cluster-LLR-style
+raw `max(...) > threshold` rule.  `python -m compileall -q src tests
+examples`, notebook JSON/cell-compilation checks, and `git diff --check` also
+pass.  The notebook's `validate_small_configuration()` was re-executed
+directly (cells 0-7, i.e. through the benchmark cell; the opt-in production
+sweep and plot cells were not run) and printed "All small fixed/adaptive
+validation checks passed."; `examples/bplsd_adaptive_knill.py` was also run
+directly and produced real DEM-only-driven long shots (2/256) at
+`physical_error=0.01`.
+
 ## Next recommended task
 
 The next recommended step is separate statistical validation of confidence
-calibration. Do not change
-the static backend or decoder mathematics.  Circuit-derived code-capacity
-priors and confidence-threshold selection policy remain experimental and are
-documented in `FUTURE.md`.
+calibration, now specifically for the DEM-only default established by this
+session's audit (previous sweep numbers using the old
+`worst_css_cluster_llr`-style all-components aggregator are not directly
+comparable). Do not change the static backend or decoder mathematics.
+Circuit-derived code-capacity priors and confidence-threshold selection
+policy remain experimental and are documented in `FUTURE.md`, including the
+new "Code-capacity confidence for adaptive state preparation" subsection.
