@@ -347,3 +347,32 @@ comparable). Do not change the static backend or decoder mathematics.
 Circuit-derived code-capacity priors and confidence-threshold selection
 policy remain experimental and are documented in `FUTURE.md`, including the
 new "Code-capacity confidence for adaptive state preparation" subsection.
+
+## Reproducibility validation infrastructure
+
+Added the opt-in `validation/` package for two statistical suites and saved
+plot generation.  Validation 1 captures the exact modular circuit built by
+`knill_online_offline(...)` and compares its legacy static execution with
+`StatefulFlipSimulatorBackend`.  Validation 2 compares fixed `d` rounds with
+`knill_online_offline_adaptive(...)` using
+`AdaptiveSERounds(short_rounds=1, long_rounds=d, policy=AlwaysLongPolicy())`;
+the adaptive result is checked to have pair fallback rate 1 and effective
+round count `d`.
+
+The runners support stable derived seeds, configurable distances/errors/shots/
+replicates/pauli/output, checkpoint-resume, JSON metadata, Wilson intervals,
+Fisher tests, Holm correction, underpowered labels, and PNG/PDF plots.  The
+production d=5/7 matrix has not been run.  A d=3, p=0, 256-shot smoke run for
+both suites completed, produced raw/comparison CSVs and figures, and was
+rerun successfully without adding duplicate raw rows.  The full local test
+suite now passes 65 tests.
+
+Added executable `validation/run_knill_repro.sh`, which runs both validation
+runners sequentially and forwards all command-line options to each. Its
+combined smoke invocation completed successfully.  The launcher now embeds
+the requested production defaults: distances 5/7, physical errors
+0.001/0.003, 4096 shots, and 3 replicates.
+
+Added `--verbose` progress reporting to both runners. Messages are flushed
+immediately and include point number, parameters, seed, workflow completion,
+runtime, checkpoint status, and adaptive fallback statistics.

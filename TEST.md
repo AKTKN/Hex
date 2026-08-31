@@ -673,3 +673,82 @@ No adaptive simulator or core-code refactor was implemented or tested.
 
     Outcome: PASS. Notebook JSON parsing and all 10 code-cell compilations
     passed; Python compilation and whitespace validation also passed.
+
+## Reproducibility validation infrastructure
+
+88. `PYTHONPATH=src python -m pytest -q
+    tests/test_validation_infrastructure.py`
+
+    Outcome: PASS, 8 fast validation-infrastructure tests.  These cover
+    parameter-derived seeds, Wilson intervals, Fisher tables, pooled counts,
+    Holm adjustment, underpowered status, checkpoint deduplication, fixed
+    distance-round configuration, and synthetic plotting.
+
+89. `PYTHONPATH=src python -m compileall -q validation tests` followed by
+    `git diff --check`.
+
+    Outcome: PASS.
+
+90. `PYTHONPATH=src python -m validation.fixed_workflow_repro --smoke
+    --overwrite --output-dir /tmp/hex-validation-smoke-fixed`.
+
+    Outcome: PASS. The d=3, p=0, 256-shot smoke run created
+    `fixed_workflow_raw.csv`, `fixed_workflow_comparison.csv`, and invocation
+    metadata. It recorded 256 shots for both `legacy_static` and
+    `stateful_fixed`; both had zero logical errors.
+
+91. `PYTHONPATH=src python -m validation.adaptive_forced_long_repro --smoke
+    --overwrite --output-dir /tmp/hex-validation-smoke-adaptive`.
+
+    Outcome: PASS. The d=3, p=0, 256-shot smoke run created the adaptive raw
+    and comparison CSVs and metadata. The adaptive row recorded
+    `short_rounds=1`, `extra_rounds=2`, `total_long_rounds=3`, two patch
+    events, `pair_fallback_rate=1.0`, and `mean_effective_rounds=3.0`; both
+    workflows had zero logical errors.
+
+92. Reran both smoke runners without `--overwrite` and checked raw CSV line
+    counts, then ran
+    `PYTHONPATH=src python -m validation.plot_knill_repro --validation fixed`
+    and the corresponding adaptive command.
+
+    Outcome: PASS. Each raw file remained at three lines (header plus two
+    workflow rows), and both suites produced nonempty PNG and PDF figures
+    without rerunning simulation from the plotting module.
+
+93. `PYTHONPATH=src python -m pytest -q`.
+
+    Outcome: PASS, 64 tests with the existing eight dependency deprecation
+    warnings.  The requested production d=5/7 validation matrix was not run.
+
+94. `PYTHONPATH=src python -m pytest -q
+    tests/test_validation_infrastructure.py`,
+    `PYTHONPATH=src python -m pytest -q`, and
+    `PYTHONPATH=src python -m compileall -q src tests validation` followed by
+    `git diff --check` after the final validation test addition.
+
+    Outcome: PASS. The focused validation suite passed 8 tests; the full local
+    suite passed 65 tests with the existing eight dependency deprecation
+    warnings; compilation and whitespace validation also passed.
+
+95. `bash validation/run_knill_repro.sh --smoke --overwrite
+    --output-dir /tmp/hex-validation-smoke-script`, after `bash -n
+    validation/run_knill_repro.sh`.
+
+    Outcome: PASS. The combined launcher ran both validations and created
+    three-line fixed and adaptive raw CSV files.
+
+96. `bash -n validation/run_knill_repro.sh` and
+    `bash validation/run_knill_repro.sh --smoke --overwrite
+    --output-dir /tmp/hex-validation-script-params` after embedding the
+    production parameter set in the launcher.
+
+    Outcome: PASS. The embedded production arguments were accepted, the
+    explicit smoke override ran both validations, and both raw CSV files had
+    three lines. The production matrix itself was not run.
+
+97. `bash validation/run_knill_repro.sh --smoke --verbose --overwrite
+    --output-dir /tmp/hex-validation-verbose`.
+
+    Outcome: PASS. Both runners emitted real-time flushed progress. The
+    adaptive smoke output reported `pair_fallback_rate=1.000` and
+    `mean_rounds=3.000`; both checkpoints were written successfully.
