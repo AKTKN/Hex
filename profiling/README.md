@@ -2,8 +2,11 @@
 
 `adaptive_walltime_profile.py` measures the current, correctness-first
 adaptive Knill executor with a small `time.perf_counter_ns()` section recorder.
-It does not batch shots differently, add simulator calls, change decoder
-inputs, or make any adaptive decision itself.
+The correction-to-measurement-flip maps and detector-stripped adaptive
+long-suffix circuits are deterministic setup data prepared once by the
+executor before repeated shot execution; adaptive physical simulation remains
+stateful and per-shot. It does not batch shots differently, add simulator
+calls, change decoder inputs, or make any adaptive decision itself.
 
 Run from the repository root:
 
@@ -28,12 +31,19 @@ therefore not summed into the primary percentage table.
 
 Outputs are written to `profiling/results/` by default:
 
-* `adaptive_walltime_raw.csv`: per-phase, per-shot/per-section aggregates;
-* `adaptive_walltime_summary.csv`: measured and warm-up section summaries;
-* `adaptive_walltime_report.md`: configuration, timing tables, cache and
-  `reference_sample` counts, and profile-based optimization candidates;
-* `adaptive_walltime_breakdown.png`: optional major-stage bar chart.
+By default the optimized run writes distinct shared-map/suffix files so the
+previous profiling results are preserved:
 
-This profiler is intentionally lightweight.  It is meant to identify where a
-few current one-shot executions spend time before any optimization or
-refactoring is attempted; it is not an LER-estimation workflow.
+* `adaptive_walltime_shared_map_suffix_raw.csv`: per-phase, per-shot/per-section aggregates;
+* `adaptive_walltime_shared_map_suffix_summary.csv`: measured and warm-up section summaries;
+* `adaptive_walltime_shared_map_suffix_report.md`: configuration, timing tables,
+  suffix/map setup costs, and measured lookup counts;
+* `adaptive_walltime_shared_map_suffix_breakdown.png`: optional major-stage bar chart;
+* `adaptive_walltime_optimization_comparison.md`: comparison against the
+  original and shared-map profiles.
+
+Use `--output-prefix` to choose another filename prefix.
+
+This profiler is intentionally lightweight. It is meant to identify where a
+few current one-shot executions spend time before the next optimization is
+attempted; it is not an LER-estimation workflow.

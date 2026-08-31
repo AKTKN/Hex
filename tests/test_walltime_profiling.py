@@ -120,5 +120,10 @@ def test_profiling_does_not_change_seeded_adaptive_result():
         without_profile.per_shot["would_extend_zero"],
         with_profile.per_shot["would_extend_zero"],
     )
-    assert any(event.section == "correction_map.cache_miss" for event in profiler.events)
+    assert any(event.section == "setup.correction_map.generate" for event in profiler.events)
+    assert any(event.section == "shot.correction_map.lookup" for event in profiler.events)
+    assert not any(
+        event.section == "shot.correction_map.fallback_generate"
+        for event in profiler.events
+    )
     assert any(event.section == "corrected_measurements.reference_sample" for event in profiler.events)

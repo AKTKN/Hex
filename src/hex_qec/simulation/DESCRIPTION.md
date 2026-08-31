@@ -91,7 +91,7 @@ modules and `AdaptiveStatePrepModule` events. Adjacent `|0_L>`/`|+_L>` events
 with the same teleportation index form one synchronized pair: both short
 patches are decoded before either policy decision is committed, and either
 patch requesting extension forces both patches to long. It maintains a separate
-software correction frame, dynamically reconstructs correction-to-measurement
+software correction frame, reuses executor-lifetime correction-to-measurement
 maps for the selected path, and keeps physical simulator state separate from
 decoder corrections. `knill_online_offline_adaptive(...)` is the protocol
 builder using this executor. It records one event for each `|0_L>` and
@@ -111,19 +111,23 @@ For a synchronized pair, physical execution is ordered as Z-short, X-short,
 Z-extra, X-extra.  The extra circuits are executed on the two existing
 `FlipSimulator` states and are not independently sampled or reinitialized.
 Their detector annotations are omitted from the interleaved physical circuit
-because those annotations have local contiguous-record references; each
-selected long decoder still receives its complete, correctly reconstructed
-round-1..long measurement history.  Correction maps are generated in the
-logical Z-then-X order and translated to the interleaved physical measurement
-record, keeping physical state separate from the software correction frame.
+because those annotations have local contiguous-record references. The
+detector-stripped extra suffix for each adaptive description is prepared once
+by the executor and reused for every selected shot; each selected long decoder
+still receives its complete, correctly reconstructed round-1..long measurement
+history. Correction maps are generated in the logical Z-then-X order and
+translated to the interleaved physical measurement record, keeping physical
+state separate from the software correction frame.
 
 ## Limitations
 
 - The original `StatefulFlipSimulatorBackend` remains fixed-round; adaptive
   execution uses the separate `StatefulAdaptiveKnillExecutor`.
-- Adaptive execution is deliberately unoptimized: it uses one
-  `FlipSimulator(batch_size=1)` per shot and recomputes deterministic
-  correction maps for paths as needed.
+- Adaptive execution remains deliberately per-shot and uses one
+  `FlipSimulator(batch_size=1)` per shot. Deterministic correction maps and
+  detector-stripped adaptive extra suffixes are prepared once per executor;
+  unseen multi-teleportation mixed paths may use a one-time executor-level
+  fallback for correction-map generation.
 - It uses the existing 256-shot batch convention by default, but accepts a
   configurable batch size for tests and experiments.
 - `reference_sample()` is computed for the complete concatenated circuit and

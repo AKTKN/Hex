@@ -2,7 +2,7 @@
 
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import stim
@@ -301,10 +301,78 @@ class _CorrectionEvent:
     corrections: np.ndarray
 
 
+def _path_key(units: Sequence[Any]) -> tuple[int, ...]:
+    """Identify a deterministic logical module path by its module identities."""
+
+    return tuple(id(unit) for unit in units)
+
+
+def _noise_free_circuit_for_units(units: Sequence[Any]) -> stim.Circuit:
+    circuit = stim.Circuit()
+    for unit in units:
+        circuit += unit.circuit.without_noise()
+    return circuit
+
+
+def _generate_correction_maps(units: Sequence[Any]) -> tuple[Any | None, ...]:
+    """Generate the existing correction maps for one logical module path."""
+
+    maps: list[Any | None] = []
+    previous_detectors = 0
+    for index, module in enumerate(units):
+        before = _noise_free_circuit_for_units(units[:index])
+        after = _noise_free_circuit_for_units(units[index + 1 :])
+        if isinstance(module, measurement_module):
+            module.generate_measurement_flip_map(before, after)
+            maps.append(module.correction_to_measurement_flips)
+        elif isinstance(module, (detector_module, css_detector_module)):
+            module.generate_measurement_flip_map(
+                before,
+                after,
+                previous_detectors,
+            )
+            maps.append(module.correction_to_measurement_flips)
+        else:
+            maps.append(None)
+        previous_detectors += module.num_detectors
+    return tuple(maps)
+
+
+class _CorrectionMapCache:
+    """Executor-lifetime, read-only-after-preparation correction-map store."""
+
+    def __init__(self) -> None:
+        self._entries: dict[tuple[int, ...], tuple[Any | None, ...]] = {}
+        self.generation_count = 0
+
+    def get(self, key: tuple[int, ...]) -> tuple[Any | None, ...] | None:
+        return self._entries.get(key)
+
+    def prepare(self, units: Sequence[Any]) -> tuple[Any | None, ...]:
+        key = _path_key(units)
+        maps = self._entries.get(key)
+        if maps is None:
+            maps = _generate_correction_maps(units)
+            self._entries[key] = maps
+            self.generation_count += 1
+        return maps
+
+    @property
+    def keys(self) -> tuple[tuple[int, ...], ...]:
+        return tuple(self._entries)
+
+
 class _AdaptiveShotRunner:
     """Unoptimized one-shot executor used by the adaptive protocol path."""
 
-    def __init__(self, *, seed: int | None, profiler: Any = None) -> None:
+    def __init__(
+        self,
+        *,
+        seed: int | None,
+        profiler: Any = None,
+        correction_map_cache: _CorrectionMapCache | None = None,
+        stripped_suffix_cache: Mapping[int, stim.Circuit] | None = None,
+    ) -> None:
         self.profiler = profiler
         self.simulator = stim.FlipSimulator(
             batch_size=1,
@@ -317,7 +385,11 @@ class _AdaptiveShotRunner:
         self.event_observations: list[AdaptiveEventObservation] = []
         self.logical_error = False
         self.postselected = False
-        self._map_cache: dict[tuple[int, ...], list[Any | None]] = {}
+        # Standalone shot runners retain a private fallback cache for the
+        # legacy/internal use case.  Protocol-created runners receive the
+        # executor-owned cache below and never regenerate prepared paths.
+        self._correction_map_cache = correction_map_cache or _CorrectionMapCache()
+        self._stripped_suffix_cache = stripped_suffix_cache
         # logical measurement index -> physical measurement index.  It is
         # normally identity; a long synchronized pair has z-short, x-short,
         # z-extra, x-extra in the physical record but z-long, x-long in the
@@ -333,10 +405,7 @@ class _AdaptiveShotRunner:
 
     @staticmethod
     def _noise_free_circuit_for_units(units: Sequence[Any]) -> stim.Circuit:
-        circuit = stim.Circuit()
-        for unit in units:
-            circuit += unit.circuit.without_noise()
-        return circuit
+        return _noise_free_circuit_for_units(units)
 
     def _measurement_count(self, units: Sequence[Any] | None = None) -> int:
         return sum(unit.num_measurements for unit in (units or self.units))
@@ -344,42 +413,34 @@ class _AdaptiveShotRunner:
     def _detector_count(self, units: Sequence[Any] | None = None) -> int:
         return sum(unit.num_detectors for unit in (units or self.units))
 
-    def _correction_maps(self, units: Sequence[Any]) -> list[Any | None]:
-        key = tuple(id(unit) for unit in units)
-        if key in self._map_cache:
-            with _profile_section(
-                self.profiler, "correction_map.cache_hit"
-            ):
-                pass
-            return self._map_cache[key]
+    def _physical_extra_circuit(
+        self, description: AdaptiveStatePrepModule
+    ) -> stim.Circuit:
+        if self._stripped_suffix_cache is None:
+            raise RuntimeError(
+                "adaptive shot runner requires an executor-prepared suffix cache"
+            )
+        try:
+            return self._stripped_suffix_cache[id(description)]
+        except KeyError as error:
+            raise RuntimeError(
+                "adaptive suffix was not prepared for this module"
+            ) from error
 
-        # Keep hit/miss counters separate from generation time.  The miss
-        # marker is intentionally tiny; the actual deterministic work is
-        # measured by the sibling ``generate`` section below.
-        with _profile_section(self.profiler, "correction_map.cache_miss"):
+    def _correction_maps(self, units: Sequence[Any]) -> tuple[Any | None, ...]:
+        key = _path_key(units)
+        with _profile_section(self.profiler, "shot.correction_map.lookup"):
+            maps = self._correction_map_cache.get(key)
+        if maps is not None:
+            return maps
+
+        # This is only a compatibility fallback for a path not known during
+        # executor preparation.  It is executor-scoped, so repeated shots do
+        # not regenerate the same unseen path.
+        with _profile_section(self.profiler, "shot.correction_map.fallback_miss"):
             pass
-
-        maps: list[Any | None] = []
-        with _profile_section(self.profiler, "correction_map.generate"):
-            previous_detectors = 0
-            for index, module in enumerate(units):
-                before = self._noise_free_circuit_for_units(units[:index])
-                after = self._noise_free_circuit_for_units(units[index + 1 :])
-                if isinstance(module, measurement_module):
-                    module.generate_measurement_flip_map(before, after)
-                    maps.append(module.correction_to_measurement_flips)
-                elif isinstance(module, (detector_module, css_detector_module)):
-                    module.generate_measurement_flip_map(
-                        before,
-                        after,
-                        previous_detectors,
-                    )
-                    maps.append(module.correction_to_measurement_flips)
-                else:
-                    maps.append(None)
-                previous_detectors += module.num_detectors
-        self._map_cache[key] = maps
-        return maps
+        with _profile_section(self.profiler, "shot.correction_map.fallback_generate"):
+            return self._correction_map_cache.prepare(units)
 
     def _corrected_measurements(
         self,
@@ -537,8 +598,8 @@ class _AdaptiveShotRunner:
             raise ValueError("adaptive policy must return one boolean per shot")
 
         if bool(extend[0]):
-            extra_circuit = _without_detectors(description.extra_circuit)
             with _profile_section(self.profiler, "shot.physical.long.total"):
+                extra_circuit = self._physical_extra_circuit(description)
                 with _profile_section(self.profiler, "shot.physical.long.zero"):
                     self.simulator.do(extra_circuit)
             self.physical_units.append(
@@ -696,8 +757,8 @@ class _AdaptiveShotRunner:
             extend_pair = z_would_extend or x_would_extend
 
         if extend_pair:
-            z_extra_circuit = _without_detectors(z_description.extra_circuit)
             with _profile_section(self.profiler, "shot.physical.long.total"):
+                z_extra_circuit = self._physical_extra_circuit(z_description)
                 with _profile_section(self.profiler, "shot.physical.long.zero"):
                     self.simulator.do(z_extra_circuit)
                 z_extra = _PhysicalSegment(
@@ -705,7 +766,7 @@ class _AdaptiveShotRunner:
                     z_extra_circuit.num_measurements,
                 )
                 self.physical_units.append(z_extra)
-                x_extra_circuit = _without_detectors(x_description.extra_circuit)
+                x_extra_circuit = self._physical_extra_circuit(x_description)
                 with _profile_section(self.profiler, "shot.physical.long.plus"):
                     self.simulator.do(x_extra_circuit)
                 x_extra = _PhysicalSegment(
@@ -953,8 +1014,8 @@ class _AdaptiveShotRunner:
                     self._run_standard_module(module)
             index += 1
 
-        circuit = self._circuit_for_units(self.physical_units)
         with _profile_section(self.profiler, "shot.final.detector_validation"):
+            circuit = self._circuit_for_units(self.physical_units)
             corrected = self._corrected_measurements()
         if circuit.num_detectors:
             with _profile_section(
@@ -984,6 +1045,168 @@ class StatefulAdaptiveKnillExecutor:
         self.modules = list(modules)
         self.batch_size = batch_size
         self.seed = seed
+        self.profiler = self._find_profiler(self.modules)
+        self._correction_map_cache = _CorrectionMapCache()
+        self._precompute_correction_maps(self.profiler)
+        self._stripped_suffix_cache: dict[int, stim.Circuit] = {}
+        self._precompute_stripped_suffixes(self.profiler)
+
+    @staticmethod
+    def _find_profiler(modules: Sequence[Any]) -> Any | None:
+        """Find the opt-in profiler carried by constructed CSS modules."""
+
+        for module in modules:
+            candidates = [module]
+            if isinstance(module, AdaptiveStatePrepModule):
+                candidates.extend([module.short_module, module.long_module])
+            for candidate in candidates:
+                profiler = getattr(candidate, "profiler", None)
+                if profiler is not None:
+                    return profiler
+        return None
+
+    @staticmethod
+    def _is_adaptive_pair(
+        modules: Sequence[Any], index: int
+    ) -> bool:
+        if index + 1 >= len(modules):
+            return False
+        first = modules[index]
+        second = modules[index + 1]
+        return (
+            isinstance(first, AdaptiveStatePrepModule)
+            and isinstance(second, AdaptiveStatePrepModule)
+            and first.teleportation_index is not None
+            and first.teleportation_index == second.teleportation_index
+            and {first.state_basis, second.state_basis} == {"x", "z"}
+        )
+
+    def _planned_logical_paths(
+        self, choices: Sequence[bool]
+    ) -> list[tuple[Any, ...]]:
+        """List map paths for one planned short/long branch pattern.
+
+        The planner mirrors the existing runner's logical-unit commits.  It
+        records both the short-decode prefix and, for a long choice, the
+        complete long path.  For multiple adaptive events the caller plans
+        only common all-short/all-long patterns; an unseen mixed pattern uses
+        the executor-level one-time fallback in ``_correction_maps``.
+        """
+
+        paths: list[tuple[Any, ...]] = []
+        logical_units: list[Any] = []
+        choice_index = 0
+        index = 0
+        while index < len(self.modules):
+            module = self.modules[index]
+            if self._is_adaptive_pair(self.modules, index):
+                other = self.modules[index + 1]
+                z_description, x_description = (
+                    (module, other)
+                    if module.state_basis == "z"
+                    else (other, module)
+                )
+                short_path = tuple(
+                    [*logical_units, z_description.short_module, x_description.short_module]
+                )
+                paths.append(short_path)
+                use_long = bool(choices[choice_index])
+                if use_long:
+                    paths.append(tuple([
+                        *logical_units,
+                        z_description.long_module,
+                        x_description.long_module,
+                    ]))
+                    logical_units.extend([
+                        z_description.long_module,
+                        x_description.long_module,
+                    ])
+                else:
+                    logical_units.extend([
+                        z_description.short_module,
+                        x_description.short_module,
+                    ])
+                choice_index += 1
+                index += 2
+                continue
+            if isinstance(module, AdaptiveStatePrepModule):
+                paths.append(tuple([*logical_units, module.short_module]))
+                use_long = bool(choices[choice_index])
+                if use_long:
+                    paths.append(tuple([*logical_units, module.long_module]))
+                    logical_units.append(module.long_module)
+                else:
+                    logical_units.append(module.short_module)
+                choice_index += 1
+            else:
+                logical_units.append(module)
+                paths.append(tuple(logical_units))
+            index += 1
+        paths.append(tuple(logical_units))
+        return paths
+
+    def _precompute_correction_maps(self, profiler: Any | None) -> None:
+        adaptive_count = sum(
+            1
+            for index, module in enumerate(self.modules)
+            if isinstance(module, AdaptiveStatePrepModule)
+            and not (
+                index > 0
+                and self._is_adaptive_pair(self.modules, index - 1)
+            )
+        )
+        if adaptive_count == 0:
+            choice_patterns: tuple[tuple[bool, ...], ...] = ((),)
+        elif adaptive_count == 1:
+            choice_patterns = ((False,), (True,))
+        else:
+            # Avoid exponential path enumeration.  These cover the common
+            # forced-short and forced-long workflows; mixed paths are still
+            # cached exactly once when first encountered by this executor.
+            choice_patterns = (
+                (False,) * adaptive_count,
+                (True,) * adaptive_count,
+            )
+
+        planned_paths: list[tuple[Any, ...]] = []
+        seen: set[tuple[int, ...]] = set()
+        for choices in choice_patterns:
+            for path in self._planned_logical_paths(choices):
+                key = _path_key(path)
+                if key not in seen:
+                    seen.add(key)
+                    planned_paths.append(path)
+
+        with _profile_section(
+            profiler, "setup.correction_map_precompute"
+        ):
+            for path in planned_paths:
+                if self._correction_map_cache.get(_path_key(path)) is not None:
+                    continue
+                with _profile_section(profiler, "setup.correction_map.generate"):
+                    self._correction_map_cache.prepare(path)
+
+    def _precompute_stripped_suffixes(self, profiler: Any | None) -> None:
+        with _profile_section(profiler, "setup.suffix_precompute"):
+            for module in self.modules:
+                if not isinstance(module, AdaptiveStatePrepModule):
+                    continue
+                module_key = id(module)
+                if module_key in self._stripped_suffix_cache:
+                    continue
+                basis = (
+                    "zero"
+                    if module.state_basis == "z"
+                    else "plus"
+                    if module.state_basis == "x"
+                    else "other"
+                )
+                with _profile_section(
+                    profiler, f"setup.suffix_precompute.{basis}"
+                ):
+                    self._stripped_suffix_cache[module_key] = _without_detectors(
+                        module.extra_circuit
+                    )
 
     def _run_batch(
         self,
@@ -1009,7 +1232,12 @@ class StatefulAdaptiveKnillExecutor:
                 else nullcontext()
             )
             with shot_context:
-                runner = _AdaptiveShotRunner(seed=shot_seed, profiler=profiler)
+                runner = _AdaptiveShotRunner(
+                    seed=shot_seed,
+                    profiler=profiler,
+                    correction_map_cache=self._correction_map_cache,
+                    stripped_suffix_cache=self._stripped_suffix_cache,
+                )
                 error, postselection, shot_observations = runner.run(self.modules)
             errors[shot] = error
             postselected[shot] = postselection

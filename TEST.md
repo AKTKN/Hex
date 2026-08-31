@@ -804,3 +804,76 @@ No adaptive simulator or core-code refactor was implemented or tested.
 
      Outcome: PASS. The optional Cluster-LLR profile completed 2 measured
      shots and recorded short selection for both synchronized pairs.
+
+## Shared correction-map cache optimization
+
+104. `PYTHONPATH=src pytest -q tests/test_walltime_profiling.py
+     tests/test_shared_correction_map_cache.py` after moving correction-map
+     ownership to the executor.
+
+    Outcome: PASS, 8 tests with the existing eight dependency deprecation
+    warnings. This covered same-object reuse by separate shot runners,
+    eager short/long path preparation, zero measured-shot fallback misses,
+    and a two-teleportation smoke run.
+
+105. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py
+     tests/test_phase5_confidence_adaptive.py tests/test_phase3_stateful_backend.py
+     tests/test_shared_correction_map_cache.py tests/test_walltime_profiling.py`.
+
+    Outcome: PASS, 49 tests with the existing eight dependency deprecation
+    warnings.
+
+106. `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m compileall -q
+     src tests profiling && git diff --check`.
+
+    Outcome: PASS, 73 tests with the existing eight dependency deprecation
+    warnings; compilation and whitespace validation also passed.
+
+107. `python -m profiling.adaptive_walltime_profile --distance 5
+     --physical-error 0.003 --short-rounds 1 --long-rounds 5 --num-shots 5
+     --warmup-shots 1 --seed 1234 --policy always-long --pauli z
+     --output-dir profiling/results` after all tests passed.
+
+    Outcome: PASS. The optimized profile completed 5 measured shots with
+    0/5 logical errors and mean measured E2E time 0.059968956 s/shot. It
+    recorded 35 measured-shot map lookups, zero fallback misses/generation,
+    0.158809057 s offline generation across 9 unique path sets, and wrote
+    the distinct shared-cache raw/summary/report/PNG outputs plus
+    `adaptive_walltime_cache_comparison.md`. The preserved pre-cache profile
+    remains unchanged.
+
+## Detector-stripped adaptive suffix precomputation
+
+108. `PYTHONPATH=src pytest -q tests/test_shared_correction_map_cache.py`.
+
+    Outcome: PASS, 7 focused suffix/cache tests with the existing eight
+    dependency deprecation warnings. This covered exact z/x stripped-suffix
+    equivalence, no remaining detector annotations, setup-only stripping
+    across three shots, AlwaysShort non-execution, shared-map reuse, distinct
+    correction-map paths, and a two-teleportation smoke run.
+
+109. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py
+     tests/test_phase5_confidence_adaptive.py tests/test_phase3_stateful_backend.py
+     tests/test_shared_correction_map_cache.py tests/test_walltime_profiling.py`.
+
+    Outcome: PASS, 53 tests with the existing eight dependency deprecation
+    warnings.
+
+110. `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m compileall -q
+     src tests profiling && git diff --check`.
+
+    Outcome: PASS, 76 tests with the existing eight dependency deprecation
+    warnings; compilation and whitespace validation also passed.
+
+111. `python -m profiling.adaptive_walltime_profile --distance 5
+     --physical-error 0.003 --short-rounds 1 --long-rounds 5 --num-shots 5
+     --warmup-shots 1 --seed 1234 --policy always-long --pauli z
+     --output-dir profiling/results` after all tests passed.
+
+    Outcome: PASS. The suffix-precomputed profile completed 5 measured shots
+    with 0/5 logical errors and mean measured E2E time 0.009330932 s/shot.
+    Setup suffix preparation was 0.049755752 s; measured-shot suffix
+    preparation was zero. It wrote the distinct
+    `adaptive_walltime_shared_map_suffix_*` artifacts and
+    `adaptive_walltime_optimization_comparison.md`, preserving earlier
+    profile outputs.

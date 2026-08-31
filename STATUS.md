@@ -421,3 +421,88 @@ these accounting conventions explicit when comparing future profiles. The
 next action is to review the measured bottleneck ranking before requesting any
 optimization; no optimization should be made as part of this profiling
 checkpoint.
+
+## Shared correction-map cache optimization
+
+Date: 2026-08-31
+
+Implemented only the requested correction-map lifetime optimization. The
+previous `_AdaptiveShotRunner._map_cache` was shot-local; correction maps are
+now owned by one `_CorrectionMapCache` per `StatefulAdaptiveKnillExecutor` and
+passed by shared reference to every shot runner. Entries are keyed by the
+existing tuple of logical module identities, so short and long logical paths
+remain distinct and the software-frame propagation logic is unchanged.
+
+For one teleportation, both short and long branch plans are eagerly prepared
+before warm-up or measured shots. For multiple teleportations, all-short and
+all-long common plans are eagerly prepared without exponential path
+enumeration; an unseen mixed path uses an explicit executor-level one-time
+fallback and is then reused by later shots.
+
+Focused cache tests cover shared map-object reuse, distinct prepared paths,
+three-shot no-fallback behavior, and a two-teleportation smoke run. The full
+local suite passes 73 tests.
+
+The unchanged d=5 profile (p=0.003, short/long 1/5, AlwaysLong, z basis,
+one teleportation, seed 1234, one warm-up and five measured shots) was rerun
+after all tests passed. Mean measured E2E time is 0.059968956 s/shot versus
+the preserved pre-cache 0.181446721 s/shot, a measured 3.026x speedup. Offline
+map preparation took 0.158809057 s for 9 unique path sets; measured shots had
+35 lookups, 0 misses, and 0 s fallback generation, versus the old 30 misses
+and 0.618240641 s total generation. The approximate break-even is 1.31 shots
+using the observed means.
+
+After caching, adaptive suffix preparation is the dominant measured stage at
+84.20% of E2E; actual physical Stim execution is 0.16%, downstream Knill
+processing 7.35%, decoder work 6.00%, and measurement/reference/correction
+processing 0.93%. Policy/control is 0.03%. The top-level accounting covers
+98.72%, leaving 1.28% explicit other/uninstrumented time. BP-LSD is not the
+dominant cost in this profile. `reference_sample()` remains 35 calls totaling
+0.007543083 s. No further optimization was implemented.
+
+## Open issue / next action
+
+Review the post-cache profile's suffix-preparation cost before requesting a
+separate optimization. Do not implement suffix or any other optimization as
+part of this checkpoint.
+
+## Detector-stripped adaptive suffix precomputation
+
+Date: 2026-08-31
+
+Implemented only the requested second optimization. Previously, the adaptive
+shot runner called `_without_detectors(description.extra_circuit)` on every
+selected long branch. `StatefulAdaptiveKnillExecutor` now creates one
+detector-stripped suffix per adaptive-description object during setup and
+passes the executor-lifetime read-only mapping to each shot runner. Both
+single-event and synchronized zero/plus pair paths now execute the stored
+suffix directly. Short/long circuit decomposition, same-shot continuation,
+measurement ordering, and long decoder inputs are unchanged.
+
+The d=5 profile was rerun with the same configuration as the earlier reports:
+p=0.003, short/long 1/5, AlwaysLong, z basis, one teleportation, surface-code
+ordering, seed 1234, one warm-up and five measured shots, BP-LSD current
+defaults, and DEM-only confidence. Mean measured E2E time fell from the
+preserved shared-map value of 0.059968956 s/shot to 0.009330932 s/shot, a
+6.427x suffix-stage speedup and 19.446x total speedup versus the original
+0.181446721 s/shot profile. Suffix setup took 0.049518417 s total: zero
+0.024678919 s and plus 0.025007403 s. Measured-shot suffix preparation was
+0 s; actual long Stim execution was 0.000059508 s/shot.
+
+Measured map behavior remained unchanged: 35 lookups, zero misses, zero
+measured generation, and 0.158099623 s offline map generation across 9 path
+sets. `reference_sample()` remained 35 calls totaling 0.007259222 s. The new
+largest non-overlapping stage is downstream Knill processing at 48.55%,
+followed by decoder work at 37.92%; physical Stim execution is 0.85% and
+measurement/reference/correction processing is 5.17%. Accounted time is
+92.75%, with 7.25% explicit other/uninstrumented time. The run produced 0/5
+logical errors and all relevant regression tests passed. No further
+optimization was implemented.
+
+## Open issue / next action
+
+The remaining measured cost is downstream Knill processing and decoder work;
+reference sampling is 15.56% as an inclusive diagnostic. Do not implement
+reference-sample, decoder, batching, or any other optimization as part of this
+checkpoint. Preserve the original and shared-map profile artifacts for future
+comparisons.

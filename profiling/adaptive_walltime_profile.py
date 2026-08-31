@@ -120,6 +120,11 @@ def _arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--confidence-threshold", type=float, default=0.01)
     parser.add_argument("--num-teleportations", type=int, default=1)
     parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "profiling" / "results")
+    parser.add_argument(
+        "--output-prefix",
+        default="adaptive_walltime_shared_map_suffix",
+        help="prefix for this optimized profile's output files",
+    )
     return parser
 
 
@@ -239,8 +244,10 @@ def _sum_sections(totals: dict[str, float], names: Iterable[str]) -> float:
 def _top_level_rows(totals: dict[str, float], e2e_total: float) -> list[dict[str, Any]]:
     groups = {
         "physical Stim execution": [
-            "shot.physical.short.total",
-            "shot.physical.long.total",
+            "shot.physical.short.zero",
+            "shot.physical.short.plus",
+            "shot.physical.long.zero",
+            "shot.physical.long.plus",
         ],
         "measurement/reference/correction processing": [
             "shot.reconstruction.short",
@@ -346,12 +353,17 @@ def _make_report(
         for event in measured_events
         if event.section == "corrected_measurements.reference_sample"
     )
-    map_hits = sum(1 for event in measured_events if event.section == "correction_map.cache_hit")
-    map_misses = sum(1 for event in measured_events if event.section == "correction_map.cache_miss")
+    map_lookups = sum(1 for event in measured_events if event.section == "shot.correction_map.lookup")
+    map_misses = sum(1 for event in measured_events if event.section == "shot.correction_map.fallback_miss")
     map_generation = sum(
         event.wall_time_seconds
         for event in measured_events
-        if event.section == "correction_map.generate"
+        if event.section == "shot.correction_map.fallback_generate"
+    )
+    setup_map_generation = sum(
+        event.wall_time_seconds
+        for event in events
+        if event.phase == "setup" and event.section == "setup.correction_map.generate"
     )
     shot_totals = _section_by_shot(measured_events, "measured").get("shot.total_wall_time", {})
     ordered_shots = [shot_totals[index] for index in sorted(shot_totals)]
@@ -371,7 +383,7 @@ def _make_report(
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as handle:
         handle.write("# Adaptive Knill wall-time profile\n\n")
-        handle.write("This report profiles the existing correctness-first adaptive executor. "
+        handle.write("This report profiles the correctness-first adaptive executor after executor-lifetime correction-map precomputation. "
                      "It is a few-shot runtime diagnosis, not an LER estimate.\n\n")
         handle.write("## Configuration\n\n")
         handle.write("```json\n")
@@ -416,7 +428,7 @@ def _make_report(
         ]
         bottleneck_candidates.sort(key=lambda item: item[1], reverse=True)
         handle.write("## Largest measured diagnostic/major-stage timers\n\n")
-        handle.write("These entries are sorted by inclusive wall time and are **not additive**; they intentionally expose nested diagnostics such as map generation inside downstream module work.\n\n")
+        handle.write("These entries are sorted by inclusive wall time and are **not additive**; they intentionally expose nested decoder and measurement diagnostics.\n\n")
         handle.write("| section | seconds | % E2E |\n|---|---:|---:|\n")
         for section, value in bottleneck_candidates[:5]:
             handle.write(f"| `{section}` | {_format_float(value)} | {100 * value / e2e_total if e2e_total else 0:.2f}% |\n")
@@ -453,25 +465,26 @@ def _make_report(
         handle.write("## Correction-map cache and `reference_sample`\n\n")
         handle.write(f"- `_corrected_measurements` calls observed: **{total_calls}**.\n")
         handle.write(f"- `reference_sample()` calls: **{total_calls}**, total **{_format_float(reference_time)} s**, mean **{_format_float(reference_time / total_calls if total_calls else 0.0)} s/call**.\n")
-        handle.write(f"- Correction-map cache hits/misses: **{map_hits}/{map_misses}**.\n")
-        handle.write(f"- Correction-map generation total: **{_format_float(map_generation)} s**.\n\n")
-        handle.write("| measured shot | map-cache hits | map-cache misses | map-generation seconds | reference-sample calls | reference-sample seconds |\n")
+        handle.write(f"- Measured-shot correction-map lookups: **{map_lookups}**.\n")
+        handle.write(f"- Measured-shot fallback misses: **{map_misses}**; fallback generation: **{_format_float(map_generation)} s**.\n")
+        handle.write(f"- Offline correction-map generation: **{_format_float(setup_map_generation)} s** across **{sum(event.section == 'setup.correction_map.generate' for event in events if event.phase == 'setup')}** unique path sets.\n\n")
+        handle.write("| measured shot | map lookups | fallback misses | fallback-generation seconds | reference-sample calls | reference-sample seconds |\n")
         handle.write("|---:|---:|---:|---:|---:|---:|\n")
         for shot_index in sorted({event.shot_index for event in measured_events if event.shot_index >= 0}):
             shot_events = [event for event in measured_events if event.shot_index == shot_index]
-            shot_hits = sum(event.section == "correction_map.cache_hit" for event in shot_events)
-            shot_misses = sum(event.section == "correction_map.cache_miss" for event in shot_events)
+            shot_lookups = sum(event.section == "shot.correction_map.lookup" for event in shot_events)
+            shot_misses = sum(event.section == "shot.correction_map.fallback_miss" for event in shot_events)
             shot_generation = sum(
                 event.wall_time_seconds
                 for event in shot_events
-                if event.section == "correction_map.generate"
+                if event.section == "shot.correction_map.fallback_generate"
             )
             shot_refs = [
                 event for event in shot_events
                 if event.section == "corrected_measurements.reference_sample"
             ]
             handle.write(
-                f"| {shot_index} | {shot_hits} | {shot_misses} | "
+                f"| {shot_index} | {shot_lookups} | {shot_misses} | "
                 f"{_format_float(shot_generation)} | {len(shot_refs)} | "
                 f"{_format_float(sum(event.wall_time_seconds for event in shot_refs))} |\n"
             )
@@ -483,6 +496,19 @@ def _make_report(
                 handle.write(f"| `{section}` | {_format_float(value)} |\n")
         else:
             handle.write("_No setup events recorded._\n")
+        suffix_setup = setup_totals.get("setup.suffix_precompute", 0.0)
+        suffix_zero = setup_totals.get("setup.suffix_precompute.zero", 0.0)
+        suffix_plus = setup_totals.get("setup.suffix_precompute.plus", 0.0)
+        runtime_suffix = sum(
+            value
+            for section, value in totals.items()
+            if section.startswith("shot.physical.long.suffix_preparation.")
+        )
+        handle.write(
+            f"\nDetector-stripped suffix setup: **{_format_float(suffix_setup)} s** "
+            f"(zero **{_format_float(suffix_zero)} s**, plus **{_format_float(suffix_plus)} s**); "
+            f"measured-shot suffix preparation: **{_format_float(runtime_suffix)} s**.\n"
+        )
         handle.write("\n")
         handle.write("## Short versus long physical Stim execution\n\n")
         short = totals.get("shot.physical.short.total", 0.0)
@@ -500,6 +526,7 @@ def _make_report(
             "reference": "If reference sampling is large, cache reference samples per equivalent execution path (expected benefit: high when measured; complexity: low; correctness risk: low/medium).",
             "decoder": "If decoder work is largest, focus on decoder invocation/statistics processing (expected benefit: proportional to measured decoder share; complexity: medium/high; correctness risk: medium).",
             "physical": "If physical Stim execution is largest, investigate execution/branch scheduling only after preserving same-shot semantics (expected benefit: proportional; complexity: medium/high; correctness risk: high).",
+            "suffix": "If adaptive suffix preparation is largest, precompute detector-stripped suffix circuits for the fixed workflow (expected benefit: high when measured; complexity: low; correctness risk: low/medium).",
         }
         if map_generation > 0.1 * e2e_total:
             handle.write(f"1. {suggestions['correction-map']}\n")
@@ -509,9 +536,96 @@ def _make_report(
             handle.write(f"3. {suggestions['decoder']}\n")
         if ranked and ranked[0]["component"] == "physical Stim execution":
             handle.write(f"3. {suggestions['physical']}\n")
-        if map_generation <= 0.1 * e2e_total and reference_time <= 0.1 * e2e_total and (not ranked or ranked[0]["component"] not in {"decoder work", "physical Stim execution"}):
+        if map_generation <= 0.1 * e2e_total and reference_time <= 0.1 * e2e_total and (not ranked or ranked[0]["component"] not in {"decoder work", "physical Stim execution", "adaptive suffix preparation"}):
             handle.write("The few-shot profile does not show a single dominant low-risk candidate beyond the measured largest stages; collect a similarly scoped profile after choosing the next hypothesis.\n")
-        handle.write("\nNo optimization was implemented by this profiling task.\n")
+        handle.write("\nCorrection-map sharing and suffix precomputation are the only optimizations represented by this profile; no further optimization was implemented.\n")
+
+
+def _write_cache_comparison(
+    path: Path,
+    *,
+    args: argparse.Namespace,
+    result: Any,
+    events: tuple[TimingEvent, ...],
+) -> None:
+    """Write a concise comparison across the original and optimized profiles."""
+
+    measured = tuple(event for event in events if event.phase == "measured")
+    original_mean = 0.181446721
+    shared_map_mean = 0.0599689558
+    original_map_generation_total = 0.618240641
+    original_map_misses = 30
+    shared_map_suffix_total = 0.252468323
+    profile_shots = 5
+    new_total = sum(
+        event.wall_time_seconds
+        for event in measured
+        if event.section == "shot.total_wall_time"
+    )
+    new_mean = new_total / args.num_shots if args.num_shots else 0.0
+    setup_map_generation = sum(
+        event.wall_time_seconds
+        for event in events
+        if event.phase == "setup" and event.section == "setup.correction_map.generate"
+    )
+    setup_suffix_generation = sum(
+        event.wall_time_seconds
+        for event in events
+        if event.phase == "setup" and event.section == "setup.suffix_precompute"
+    )
+    measured_generation = sum(
+        event.wall_time_seconds
+        for event in measured
+        if event.section == "shot.correction_map.fallback_generate"
+    )
+    measured_misses = sum(
+        event.section == "shot.correction_map.fallback_miss" for event in measured
+    )
+    lookups = sum(event.section == "shot.correction_map.lookup" for event in measured)
+    top_levels = _top_level_rows(
+        _measured_totals(measured),
+        new_total,
+    )
+    accounted = sum(row["time_seconds"] for row in top_levels)
+    suffix_generation_per_shot = shared_map_suffix_total / profile_shots
+    speedup_from_suffix = shared_map_mean / new_mean if new_mean else float("inf")
+    total_speedup = original_mean / new_mean if new_mean else float("inf")
+    saved_per_shot = shared_map_mean - new_mean
+    break_even = setup_suffix_generation / saved_per_shot if saved_per_shot > 0 else None
+    long_stim = sum(
+        event.wall_time_seconds
+        for event in measured
+        if event.section in {"shot.physical.long.zero", "shot.physical.long.plus"}
+    )
+    runtime_suffix = sum(
+        event.wall_time_seconds
+        for event in measured
+        if event.section.startswith("shot.physical.long.suffix_preparation.")
+    )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as handle:
+        handle.write("# Adaptive wall-time optimization comparison\n\n")
+        handle.write("This compares the original implementation, the shared correction-map implementation, and the current shared-map plus precomputed-suffix implementation.\n\n")
+        handle.write("| metric | original | shared maps | shared maps + suffixes |\n|---|---:|---:|---:|\n")
+        handle.write(f"| mean E2E wall time / shot | {original_mean:.9g} s | {shared_map_mean:.9g} s | {new_mean:.9g} s |\n")
+        handle.write(f"| suffix preparation / shot | n/a | {suffix_generation_per_shot:.9g} s | {runtime_suffix / args.num_shots if args.num_shots else 0:.9g} s |\n")
+        handle.write(f"| correction-map generation / measured shot | {original_map_generation_total / profile_shots:.9g} s | 0 s measured | {measured_generation / args.num_shots if args.num_shots else 0:.9g} s measured |\n")
+        handle.write(f"| measured-shot map misses | {original_map_misses} | 0 | {measured_misses} |\n")
+        handle.write(f"| offline correction-map generation | n/a | 0.158809057 s | {setup_map_generation:.9g} s |\n")
+        handle.write(f"| suffix-precompute setup | n/a | n/a | {setup_suffix_generation:.9g} s |\n")
+        handle.write(f"| actual long Stim execution / shot | n/a | n/a | {long_stim / args.num_shots if args.num_shots else 0:.9g} s |\n")
+        handle.write(f"| measured-shot map lookups | n/a | n/a | {lookups} |\n")
+        handle.write("\n")
+        handle.write(f"- Speedup from suffix precomputation over shared maps: **{speedup_from_suffix:.3f}x**.\n")
+        handle.write(f"- Total speedup over the original implementation: **{total_speedup:.3f}x**.\n")
+        handle.write(f"- Cold setup map-precomputation cost: **{setup_map_generation:.9g} s**; suffix-precompute cost: **{setup_suffix_generation:.9g} s**.\n")
+        handle.write(f"- Steady-state measured-shot mean: **{new_mean:.9g} s/shot**.\n")
+        if break_even is not None:
+            handle.write(f"- Approximate suffix break-even: **{break_even:.2f} shots**, using the shared-map versus new mean difference and excluding other setup costs.\n")
+        handle.write(f"- New largest non-overlapping stage: **{top_levels[0]['component']}** ({top_levels[0]['percent_of_e2e']:.2f}% E2E).\n")
+        handle.write(f"- Accounted fraction: **{100 * accounted / new_total if new_total else 0:.2f}%**; unaccounted: **{100 * (1 - accounted / new_total) if new_total else 0:.2f}%**.\n")
+        handle.write(f"- Logical errors: **{result.logical_errors}/{result.shots}**.\n")
 
 
 def _write_plot(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -616,13 +730,14 @@ def run(args: argparse.Namespace) -> Any:
         measured_shots=args.num_shots,
         warmup_shots=args.warmup_shots,
     )
-    _write_csv(output_dir / "adaptive_walltime_raw.csv", RAW_COLUMNS, raw_rows)
-    _write_csv(output_dir / "adaptive_walltime_summary.csv", SUMMARY_COLUMNS, summary_rows)
+    output_prefix = args.output_prefix
+    _write_csv(output_dir / f"{output_prefix}_raw.csv", RAW_COLUMNS, raw_rows)
+    _write_csv(output_dir / f"{output_prefix}_summary.csv", SUMMARY_COLUMNS, summary_rows)
     totals = _measured_totals(tuple(event for event in events if event.phase == "measured"))
     e2e_total = totals.get("shot.total_wall_time", 0.0)
     top_levels = _top_level_rows(totals, e2e_total)
     _make_report(
-        output_dir / "adaptive_walltime_report.md",
+        output_dir / f"{output_prefix}_report.md",
         args=args,
         long_rounds=long_rounds,
         policy_name=policy_name,
@@ -631,7 +746,13 @@ def run(args: argparse.Namespace) -> Any:
         metadata=metadata,
         warmup_shots=args.warmup_shots,
     )
-    _write_plot(output_dir / "adaptive_walltime_breakdown.png", top_levels)
+    _write_plot(output_dir / f"{output_prefix}_breakdown.png", top_levels)
+    _write_cache_comparison(
+        output_dir / "adaptive_walltime_optimization_comparison.md",
+        args=args,
+        result=result,
+        events=events,
+    )
     return result
 
 
