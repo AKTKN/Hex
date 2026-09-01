@@ -36,6 +36,40 @@ Comparison statuses mean:
 - `underpowered`: too few pooled logical-error events support a meaningful
   inference, regardless of the p-value.
 
+## Statistical reports
+
+After raw CSV data exist, `analyze_knill_repro.py` performs post-processing
+only; it does not run a circuit.  The existing two-sided Fisher exact test and
+Holm-Bonferroni correction are retained for difference testing.  It also
+reports the risk difference
+`RD = new_ler - legacy_ler` with a Newcombe hybrid-score interval.
+
+Equivalence is a separate CI-based TOST-style decision.  You must provide an
+absolute LER margin; a non-significant Fisher result alone is never called
+equivalent.  At `alpha=0.05`, the equivalence interval is the 90% Newcombe
+interval, and equivalence is demonstrated only when it is strictly contained
+inside `[-margin, +margin]`.
+
+For one suite:
+
+```bash
+PYTHONPATH=src python -m validation.analyze_knill_repro \
+  --suite fixed --equivalence-margin 0.0001 --alpha 0.05
+```
+
+For both suites:
+
+```bash
+PYTHONPATH=src python -m validation.analyze_knill_repro \
+  --all --equivalence-margin 0.0001 --alpha 0.05
+```
+
+Reports are written beside the raw CSVs as
+`fixed_workflow_validation_report.json/.md` and
+`adaptive_forced_long_validation_report.json/.md`.  Rows with multiple
+`config_signature` values are rejected unless `--config-signature` selects one;
+missing workflow sides are reported as `incomplete` rather than dropped.
+
 ## Smoke run
 
 Use a tiny d=3, zero-noise, 256-shot run:
@@ -66,6 +100,14 @@ runtimes, and adaptive fallback statistics while the script is running:
 ```bash
 bash validation/run_knill_repro.sh --verbose
 ```
+
+After both validation suites finish successfully, the combined launcher also
+runs `validation.analyze_knill_repro --all` and then
+`validation.plot_knill_repro --all`. It writes JSON/Markdown reports beside
+the CSVs and PNG/PDF figures under `<output-dir>/figures/`. It does not start
+analysis or plotting if either validation runner fails. The launcher uses an
+absolute equivalence margin of `0.001`; change `ANALYSIS_ARGS` in the script
+when a different scientific margin is desired.
 
 Runners checkpoint their raw CSV after every completed workflow row and skip
 completed rows on rerun.  `--overwrite` starts that suite's raw and comparison

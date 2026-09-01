@@ -194,6 +194,44 @@ def wilson_interval(
     return max(0.0, centre - radius), min(1.0, centre + radius)
 
 
+def newcombe_risk_difference_interval(
+    legacy_errors: int,
+    legacy_shots: int,
+    new_errors: int,
+    new_shots: int,
+    confidence: float = 0.95,
+) -> tuple[float, float]:
+    """Return a Newcombe hybrid-score interval for ``p_new - p_legacy``.
+
+    This is Newcombe's hybrid method 10: form separate Wilson score intervals
+    ``[l_legacy, u_legacy]`` and ``[l_new, u_new]``, then combine them as
+
+    ``lower = RD - sqrt((p_legacy-l_legacy)^2 + (u_new-p_new)^2)``
+    ``upper = RD + sqrt((u_legacy-p_legacy)^2 + (p_new-l_new)^2)``.
+
+    The interval is deliberately formed in the ``new minus legacy`` direction,
+    supports unequal shot counts, and remains finite for zero- and
+    all-error observations.
+    """
+
+    legacy_low, legacy_high = wilson_interval(
+        legacy_errors, legacy_shots, confidence
+    )
+    new_low, new_high = wilson_interval(new_errors, new_shots, confidence)
+    legacy_rate = legacy_errors / legacy_shots
+    new_rate = new_errors / new_shots
+    risk_difference = new_rate - legacy_rate
+    lower_radius = math.hypot(
+        legacy_rate - legacy_low,
+        new_high - new_rate,
+    )
+    upper_radius = math.hypot(
+        legacy_high - legacy_rate,
+        new_rate - new_low,
+    )
+    return risk_difference - lower_radius, risk_difference + upper_radius
+
+
 def fisher_table(legacy_errors: int, legacy_shots: int, new_errors: int, new_shots: int) -> list[list[int]]:
     """Build the 2x2 error/no-error table used by Fisher's exact test."""
 

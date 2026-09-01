@@ -753,6 +753,48 @@ No adaptive simulator or core-code refactor was implemented or tested.
     adaptive smoke output reported `pair_fallback_rate=1.000` and
     `mean_rounds=3.000`; both checkpoints were written successfully.
 
+98. `PYTHONPATH=src python -m pytest -q
+     tests/test_knill_repro_analysis.py tests/test_validation_infrastructure.py`.
+
+    Outcome: PASS, 14 focused post-processing and validation-infrastructure
+    tests with the existing eight dependency deprecation warnings.  This
+    covered Newcombe interval sign/edge cases, equivalence decisions, JSON
+    sanitization, incomplete data, mixed-signature rejection, and regression
+    against the existing Fisher/Holm helper.
+
+99. `PYTHONPATH=src python -m validation.analyze_knill_repro --suite fixed
+     --config-signature 3146193f6c2bd7b1 --equivalence-margin 0.001
+     --alpha 0.05` and the corresponding adaptive-forced-long command without
+     an explicit signature.
+
+    Outcome: PASS. Both commands consumed existing raw CSVs only and wrote
+    valid JSON and Markdown reports under `validation/results/`. An attempt
+    to analyze the fixed CSV without a signature correctly rejected its two
+    available signatures instead of pooling them.
+
+100. `PYTHONPATH=src python -m pytest -q`.
+
+    Outcome: PASS, 85 tests with the existing eight dependency deprecation
+    warnings. No simulation runner was invoked for this post-processing task.
+
+101. `bash -n validation/run_knill_repro.sh` followed by
+     `bash validation/run_knill_repro.sh --smoke --overwrite
+     --output-dir /tmp/hex-validation-with-plot`.
+
+     Outcome: PASS. Both smoke validations completed first, then the launcher
+     created nonempty fixed and adaptive PNG/PDF figures under the selected
+     output directory.
+
+102. `bash -n validation/run_knill_repro.sh` followed by
+     `bash validation/run_knill_repro.sh --smoke --overwrite
+     --output-dir /tmp/hex-integrated-validation` after separating sampling
+     and analysis arguments.
+
+     Outcome: PASS. The launcher ran both samplers, generated fixed and
+     adaptive JSON/Markdown reports with margin `0.001`, and then created both
+     fixed and adaptive PNG/PDF figures. No production simulation matrix was
+     run.
+
 ## Adaptive wall-time profiling
 
 98. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py
@@ -911,3 +953,13 @@ No adaptive simulator or core-code refactor was implemented or tested.
     Outcome: PASS. The profile completed 5 measured shots with 0 logical
     errors. It observed 6 reference-sample cache misses during warm-up and 35
     measured cache hits; measured E2E time was 0.011149359 s/shot.
+
+116. Repeated the d=5 profile from item 115 with
+    `--output-dir profiling/results --output-prefix
+    adaptive_walltime_reference_cache` so the cache-specific artifacts are
+    available in the repository results directory.
+
+    Outcome: PASS. The profile completed 5 measured shots with 0 logical
+    errors and wrote the raw CSV, summary CSV, Markdown report, and PNG
+    breakdown. This repeat measured 0.010170195 s/shot, with 6 warm-up
+    reference-sample misses and 35 measured cache hits.

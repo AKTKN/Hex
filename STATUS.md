@@ -377,6 +377,25 @@ Added `--verbose` progress reporting to both runners. Messages are flushed
 immediately and include point number, parameters, seed, workflow completion,
 runtime, checkpoint status, and adaptive fallback statistics.
 
+Added post-processing reports in `validation/analyze_knill_repro.py`.  The
+analyzer is simulation-free, rejects mixed configuration signatures unless
+one is selected explicitly, reuses `comparison_rows(...)` for Fisher/Holm
+results, and adds Newcombe risk-difference intervals plus CI-based
+equivalence decisions.  JSON and Markdown reports were generated from the
+available fixed and adaptive CSVs with an explicit ±0.001 margin.
+
+The combined `validation/run_knill_repro.sh` launcher now runs
+`validation.plot_knill_repro --all` only after both validation suites complete
+successfully, forwarding any selected `--output-dir`.  Its smoke path was
+verified to create both suite PNG and PDF figures.
+
+The launcher now separates sampling and post-processing arguments. It runs the
+fixed and adaptive samplers first, then invokes
+`validation.analyze_knill_repro --all --equivalence-margin 0.001`, and finally
+generates both figure sets. The integrated smoke workflow completed with JSON,
+Markdown, PNG, and PDF outputs; no simulation runner receives the analysis
+margin option.
+
 ## Adaptive wall-time profiling
 
 Date: 2026-08-31
