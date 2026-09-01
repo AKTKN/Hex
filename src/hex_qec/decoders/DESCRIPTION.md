@@ -95,6 +95,11 @@ preserves the historical generator signature. When Hex supplies no `weights`
 per-column error channel and therefore should be probabilities; the initial
 example uses `matchable=False` so Hex supplies raw DEM priors.
 
+The returned factory is a top-level `BPLSDDecoderGenerator` instance. It is
+call-compatible with the historical nested closure and is pickleable under
+the `spawn` multiprocessing start method, which allows BP-LSD adaptive
+Knill sweeps to use `hex_qec.parallel`.
+
 The adapter is optional and does not change the legacy PyMatching, BP, or
 BP-OSD generator interface. It is demonstrated in
 `examples/bplsd_adaptive_knill.py`.
@@ -185,9 +190,10 @@ less confident) example aggregators over `CSSInnerDecodeResults`:
   still compute and return their own confidence -- this capability is not
   removed -- it is simply not read by this aggregator.
 - `all_components_max_confidence(results)`: `max` over all four results.
-  This is **not** the current default and is **not** theoretically
-  justified as a stopping metric; it is kept only for diagnostic/
-  experimental comparison against the DEM-only default. See `FUTURE.md`,
+  This remains implemented internally, but is reserved for future
+  post-selection work involving calibrated code-capacity confidence. It is
+  not a selectable option in the surface-code benchmarking notebook, whose
+  guard raises `AssertionError` if it is requested. See `FUTURE.md`,
   "Code-capacity confidence for adaptive state preparation".
 
 Both are optional, metric-specific helpers, not part of the generic decoder

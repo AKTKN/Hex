@@ -6,6 +6,7 @@ from .adapters import (
     LegacyDecoderGeneratorAdapter,
     adapt_decoder_generator,
     coerce_decode_result,
+    BPLSDDecoderGenerator,
     HexBPLSDDecoder,
     make_bplsd_decoder_generator,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "LegacyDecoderGeneratorAdapter",
     "adapt_decoder_generator",
     "coerce_decode_result",
+    "BPLSDDecoderGenerator",
     "HexBPLSDDecoder",
     "make_bplsd_decoder_generator",
     "dem_only_max_confidence",

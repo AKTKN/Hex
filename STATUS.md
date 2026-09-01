@@ -5,6 +5,41 @@ Branch: `hex-parallel`
 Current implementation includes the parallel adaptive execution commits
 `f308513`, `9322a20`, and `9b582b2`.
 
+## Latest notebook benchmarking update (2026-09-01)
+
+- Updated `notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` so its
+  existing adaptive sweep grid can run through the spawn-based parallel
+  scheduler with configurable worker count, chunk sizing, per-point
+  checkpoints, and verbose progress snapshots.
+- The notebook writes parallel adaptive rows to
+  `results/adaptive_knill_surface_parallel.csv`; set `PARALLEL_SWEEP = False`
+  in the sweep cell to retain the serial adaptive path.  The fixed sweep
+  remains the serial reference.
+- Replaced the nested BP-LSD generator closure with the public, pickleable
+  `BPLSDDecoderGenerator`, preserving the legacy decoder-generator protocol.
+- Notebook smoke execution passed all 14 cells, including two four-shot
+  adaptive points using two spawned workers and verbose progress output.
+
+## Confidence aggregator policy update (2026-09-01)
+
+- The benchmarking notebook now exposes only `max_dem_only` in
+  `CONFIDENCE_AGGREGATORS`.
+- Notebook calls that request `max_all_components` raise `AssertionError`.
+- `all_components_max_confidence` remains implemented in the decoder layer as
+  a future component for calibrated code-capacity confidence and post-selection;
+  it was not removed from the internal implementation.
+
+## Short-round rule update (2026-09-01)
+
+- The benchmarking notebook now defines `SHORT_ROUNDS_RULE = "d/2"`.
+- `short_rounds_for(distance)` applies floor division, so distance 3 gives 1
+  short round and distance 5 gives 2 short rounds.
+- Serial and parallel adaptive sweeps, metadata, and the runtime estimate use
+  the derived per-distance value.
+- Ratio rules such as `"d/3"` and `"d/4"` are supported with floor
+  division, and integer rules such as `3` and `4` remain supported. Resolved
+  values below 2 emit a `RuntimeWarning`; values below 1 remain invalid.
+
 ## Completed checkpoints
 
 - Read `AGENTS.md`, `PLAN.md`, and `FUTURE.md` before inspection.

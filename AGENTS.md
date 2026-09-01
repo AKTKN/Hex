@@ -217,6 +217,16 @@ The existing Hex code uses `decoder_generator` callables. A generator is given a
 
 The current abstraction is therefore functional/duck-typed, not a formal Hex decoder API.
 
+### Notebook confidence-selection policy
+
+The surface-code adaptive benchmarking notebook intentionally exposes only
+`max_dem_only` as a selectable confidence aggregator.  It uses the repeated
+syndrome-extraction DEM confidence (`x_dem`/`z_dem`) for adaptive stopping.
+`max_all_components` remains implemented internally for future post-selection
+work involving code-capacity confidence, but it must not be reintroduced as a
+notebook benchmark choice until that confidence is calibrated.  Notebook code
+that attempts to select `max_all_components` should raise `AssertionError`.
+
 Phase 1 now provides a common result object and protocol/adapters so that a decoder can return:
 
 - correction;

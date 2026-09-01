@@ -128,6 +128,48 @@ def adapt_decoder_generator(
     )
 
 
+class BPLSDDecoderGenerator:
+    """Pickleable legacy-compatible factory for :class:`HexBPLSDDecoder`.
+
+    The previous factory returned a nested closure.  That works for the
+    serial execution path, but spawned workers cannot import the closure's
+    defining scope.  Keeping the same ``generator(pcm, weights=...)``
+    protocol in a top-level callable class makes BP-LSD usable by the
+    optional parallel simulator without changing decoder behavior.
+    """
+
+    def __init__(
+        self,
+        physical_error: float,
+        *,
+        alpha: float = 2.0,
+        decoder_options: dict[str, Any] | None = None,
+    ) -> None:
+        if not 0.0 <= physical_error < 1.0:
+            raise ValueError("physical_error must be in [0, 1)")
+        self.physical_error = float(physical_error)
+        self.alpha = alpha
+        self.decoder_options = dict(decoder_options or {})
+
+    def __call__(self, pcm, weights=None) -> "HexBPLSDDecoder":
+        if weights is None:
+            error_channel = np.full(
+                pcm.shape[1], self.physical_error, dtype=float
+            )
+        else:
+            error_channel = np.asarray(weights, dtype=float)
+            if error_channel.shape != (pcm.shape[1],):
+                raise ValueError(
+                    "BP-LSD error_channel must have one probability per PCM column"
+                )
+        return HexBPLSDDecoder(
+            pcm,
+            error_channel,
+            alpha=self.alpha,
+            **self.decoder_options,
+        )
+
+
 class HexBPLSDDecoder:
     def __init__(self, pcm, error_channel, alpha=2.0, **decoder_options):
         from ldpc.bplsd_decoder import BpLsdDecoder
@@ -320,23 +362,8 @@ def make_bplsd_decoder_generator(
     without weights, so they use a uniform channel with one probability per
     PCM column.
     """
-    if not 0.0 <= physical_error < 1.0:
-        raise ValueError("physical_error must be in [0, 1)")
-
-    def generator(pcm, weights=None):
-        if weights is None:
-            error_channel = np.full(pcm.shape[1], physical_error, dtype=float)
-        else:
-            error_channel = np.asarray(weights, dtype=float)
-            if error_channel.shape != (pcm.shape[1],):
-                raise ValueError(
-                    "BP-LSD error_channel must have one probability per PCM column"
-                )
-        return HexBPLSDDecoder(
-            pcm,
-            error_channel,
-            alpha=alpha,
-            **decoder_options,
-        )
-
-    return generator
+    return BPLSDDecoderGenerator(
+        physical_error,
+        alpha=alpha,
+        decoder_options=decoder_options,
+    )

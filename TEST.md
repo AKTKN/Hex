@@ -1172,3 +1172,110 @@ No adaptive simulator or core-code refactor was implemented or tested.
 137. `PYTHONPATH=src python -m compileall -q src tests && git diff --check`.
 
     Outcome: PASS.
+
+## Parallel adaptive benchmarking notebook (2026-09-01)
+
+138. `PYTHONPATH=src pytest -q tests --disable-warnings --maxfail=1`.
+
+    Outcome: PASS. 143 tests passed with 8 dependency deprecation warnings
+    in 23.94 s.
+
+139. Notebook source validation: `python -m json.tool
+    notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` and Python
+    compilation of its parallel sweep cell.
+
+    Outcome: PASS.
+
+140. In-memory smoke execution of
+`notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` with
+`SMOKE_TEST=True` and output captured at
+`/tmp/surface_code_knill_fixed_adaptive_sweeps_smoke.ipynb`.
+
+    Outcome: PASS. All 14 cells executed; the adaptive sweep ran two
+    four-shot points with two spawned workers and emitted verbose scheduler
+    progress snapshots.
+
+141. `PYTHONPATH=src python - <<'PY' ... pickle.dumps(make_bplsd_decoder_generator(...)) ... PY`,
+    notebook JSON/code-cell validation, `git diff --check`, and
+    `PYTHONPATH=src pytest -q`.
+
+    Outcome: PASS. The BP-LSD factory is pickleable, all notebook code cells
+    compile, whitespace validation passes, and the full suite passes 143 tests
+    with 8 dependency deprecation warnings in 23.02 s.
+
+## Notebook confidence-aggregator policy (2026-09-01)
+
+142. Notebook JSON/Python validation after disabling the
+    `max_all_components` notebook choice.
+
+    Outcome: PASS. The notebook exposes only `max_dem_only`, and its explicit
+    `max_all_components` guard raises `AssertionError` as intended.
+
+143. Fresh in-memory smoke execution of
+    `notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` with
+    `SMOKE_TEST=True`, temporary parallel CSV/checkpoint paths, and output
+    captured at `/tmp/surface_code_knill_fixed_adaptive_sweeps_smoke_v3.ipynb`.
+
+    Outcome: PASS. All 14 cells executed; the single adaptive point ran with
+    two spawned workers and verbose scheduler progress, using only
+    `max_dem_only`.
+
+144. Final notebook JSON/code compilation and aggregator-choice validation,
+    `git diff --check`, and `PYTHONPATH=src pytest -q`.
+
+    Outcome: PASS. The notebook choice mapping excludes `max_all_components`,
+    the guard is present, whitespace validation passes, and the full suite
+    passes 143 tests with 8 dependency deprecation warnings in 22.48 s.
+
+## Distance-dependent short-round rule (2026-09-01)
+
+145. Fresh in-memory smoke execution of
+    `notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` with
+    `SMOKE_TEST=True`, temporary parallel outputs, and output captured at
+    `/tmp/surface_code_knill_fixed_adaptive_sweeps_short_rule_smoke.ipynb`.
+
+    Outcome: PASS. All 14 cells executed; `SHORT_ROUNDS_RULE="d/2"` derived
+    `short_rounds=1` for distance 3, the runtime estimate reported one sweep
+    point, and the adaptive point completed with two spawned workers.
+
+146. Notebook JSON/code compilation and `git diff --check` after the
+    short-round rule update.
+
+    Outcome: PASS.
+
+## Short-round integer rules and warning (2026-09-01)
+
+147. Direct notebook-helper checks for `SHORT_ROUNDS_RULE="d/2"` and integer
+    rule `3`.
+
+    Outcome: PASS. Distance 3 resolves to 1 and emits the expected warning;
+    integer rule 3 resolves to 3 without a warning.
+
+148. Fresh in-memory smoke execution of
+    `notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb` with the
+    warning-enabled helper and temporary parallel outputs, captured at
+    `/tmp/surface_code_knill_fixed_adaptive_sweeps_round_warning_smoke.ipynb`.
+
+    Outcome: PASS. All 14 cells executed successfully, including the
+    two-worker adaptive sweep.
+
+## Generalized distance-ratio short-round rules (2026-09-01)
+
+149. Direct notebook-helper checks for `SHORT_ROUNDS_RULE="d/3"`,
+    `SHORT_ROUNDS_RULE="d/4"`, and integer rule `3`, including floor
+    division and the below-two warning.
+
+    Outcome: PASS. The ratio rules and integer rule resolve as expected, with
+    a warning for the ratio case producing one round.
+
+150. Notebook JSON/code compilation and `git diff --check` after generalizing
+    the short-round rule parser.
+
+    Outcome: PASS.
+
+151. Fresh in-memory notebook smoke execution with `SMOKE_TEST=True` and
+    temporary parallel output/checkpoint paths after the generalized `d/N`
+    parser change.
+
+    Outcome: PASS. All 14 cells executed, including the two-worker adaptive
+    parallel sweep.

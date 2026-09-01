@@ -229,6 +229,16 @@ useful information about:
 - downstream logical failure probability;
 - joint confidence combining spacetime DEM decoding and final repair decoding.
 
+The `max_all_components` aggregator is retained as an internal future
+component for this investigation. It must not be used as the stopping metric
+in the current adaptive-SE benchmark: code-capacity confidence is not yet
+calibrated against the circuit-level DEM confidence. The intended future use
+is to integrate this signal with post-selection decisions, after the effective
+code-capacity priors, confidence calibration, and post-selection semantics
+have been implemented and validated. Until then, the benchmarking notebook
+offers only `max_dem_only` and raises `AssertionError` for an attempted
+`max_all_components` selection.
+
 This requires a principled definition/calibration before it is used for
 adaptive control. In particular, the current uniform code-capacity error
 prior (see 3.1 above) is not a circuit-derived effective prior, so directly
