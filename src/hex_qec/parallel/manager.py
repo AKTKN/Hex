@@ -91,7 +91,12 @@ def _parallel_worker_main(worker_id: int, input_queue, output_queue, cpu_ids) ->
                     or result.shot_start != message.lease.shot_start
                     or result.shots != message.lease.shot_count
                 ):
-                    raise ValueError("run_chunk result does not match its shot lease")
+                    raise ValueError(
+                        "run_chunk result does not match its shot lease: "
+                        f"job_id={result.job_id!r} (expected {message.lease.job_id!r}), "
+                        f"shot_start={result.shot_start} (expected {message.lease.shot_start}), "
+                        f"shots={result.shots} (expected {message.lease.shot_count})"
+                    )
                 # The compact PreparedParallelJob protocol intentionally
                 # does not carry lease IDs.  The worker owns that binding.
                 result = replace(result, lease_id=message.lease.lease_id)

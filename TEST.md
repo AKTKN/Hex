@@ -3,6 +3,83 @@
 This log contains only commands actually run during the Phase 0 baseline
 session.  All commands were run from the repository root on 2026-08-28.
 
+## Parallel profiling and validation integration (2026-09-01)
+
+66. `python -m compileall -q profiling validation src/hex_qec` and
+`PYTHONPATH=src pytest -q tests/test_walltime_profiling.py
+tests/test_validation_infrastructure.py`
+
+    Outcome: PASS. 12 tests passed with 8 dependency deprecation warnings in
+    3.85 s.
+
+67. Parallel profiling smoke:
+`PYTHONPATH=src python -m profiling.adaptive_walltime_profile --distance 3
+--physical-error 0.0 --short-rounds 1 --long-rounds 2 --num-shots 2
+--warmup-shots 0 --num-workers 2 --initial-chunk-shots 1
+--max-chunk-shots 1`
+
+    Outcome: PASS. Two measured shots completed with zero logical errors and
+    aggregate parallel summary/report artifacts were written.
+
+68. Parallel adaptive validation smoke:
+`PYTHONPATH=src python -m validation.adaptive_forced_long_repro --smoke
+--overwrite --num-workers 2 --initial-chunk-shots 1 --max-chunk-shots 32`
+
+    Outcome: PASS. The legacy fixed-depth row and adaptive parallel row each
+    completed 256 shots; the forced-long checks reported fallback rate 1.0
+    and mean effective rounds 3.0.
+
+69. `PYTHONPATH=src pytest -q tests/test_parallel_profile_validation.py`
+
+    Outcome: PASS. 3 tests passed with 8 dependency deprecation warnings in
+    3.06 s.
+
+70. `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m compileall -q src
+tests profiling validation examples && git diff --check`
+
+    Outcome: The full local suite passed 142 tests with 8 dependency
+    deprecation warnings in 16.48 s, and compilation passed. The final
+    whitespace check initially failed on trailing spaces in `STATUS.md`.
+
+71. `git diff --check && PYTHONPATH=src python -m compileall -q src tests
+profiling validation examples`
+
+    Outcome: PASS after removing the documentation trailing spaces.
+
+72. `PYTHONPATH=src python -m diagnostics.forced_long_consistency --smoke
+--overwrite --num-workers 2 --initial-chunk-shots 1 --max-chunk-shots 32`
+
+    Outcome: PASS. Structural checks passed and all three diagnostic
+    workflows completed 256 shots using the parallel spawn backend.
+
+73. Extended parallel diagnosis with a checkpoint path, one d=3/p=0 point,
+and `--extended-multiplier 2`.
+
+    Outcome: PASS. Base and extended stages each produced all three workflow
+    rows; separate `<checkpoint stem>_base.jsonl` and
+    `<checkpoint stem>_extended.jsonl` files were created.
+
+74. `PYTHONPATH=src pytest -q tests/test_forced_long_consistency_diagnostic.py`
+
+    Outcome: PASS. 15 tests passed with 8 dependency deprecation warnings in
+    6.91 s.
+
+75. `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m compileall -q src
+tests profiling validation diagnostics examples && git diff --check`
+
+    Outcome: PASS. The full local suite passed 143 tests with 8 dependency
+    deprecation warnings in 20.90 s; compilation and whitespace validation
+    also passed.
+
+76. Final rerun after native-integer checkpoint serialization and stage-aware
+checkpoint fixes: `PYTHONPATH=src pytest -q && PYTHONPATH=src python -m
+compileall -q src tests profiling validation diagnostics examples && git diff
+--check`.
+
+    Outcome: PASS. The full local suite passed 143 tests with 8 dependency
+    deprecation warnings in 21.89 s; compilation and whitespace validation
+    also passed.
+
 ## Environment and import checks
 
 1. `python --version; pip show hex-qec stim pymatching stimbposd ldpc`

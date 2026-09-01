@@ -44,6 +44,26 @@ previous profiling results are preserved:
 
 Use `--output-prefix` to choose another filename prefix.
 
+## Parallel aggregate profile
+
+To profile aggregate throughput with spawn-based multiprocessing, set
+`--num-workers` and disable the serial warm-up phase:
+
+```bash
+PYTHONPATH=src python -m profiling.adaptive_walltime_profile \
+  --distance 5 --physical-error 0.003 --num-shots 64 \
+  --warmup-shots 0 --num-workers 4 --initial-chunk-shots 1 \
+  --max-chunk-shots 16
+```
+
+This uses the same-shot adaptive executor in persistent worker processes and
+a spawn-safe BP-LSD factory. It writes
+`<output-prefix>_parallel_summary.csv` and
+`<output-prefix>_parallel_report.md` with parent wall time, throughput,
+logical-error counts, and branch statistics. Worker-local section events are
+not collected, so detailed serial breakdown files are not produced for a
+parallel run. `--checkpoint-path` can resume an interrupted profile.
+
 This profiler is intentionally lightweight. It is meant to identify where a
 few current one-shot executions spend time before the next optimization is
 attempted; it is not an LER-estimation workflow.

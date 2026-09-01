@@ -26,6 +26,9 @@ from diagnostics.forced_long_consistency import (
     stripped_detector_circuit,
     _check_cache,
     _check_decoder_endpoints,
+    _parser,
+    _parallel_options,
+    run_diagnostic,
 )
 from hex_qec.circuit_generation import get_parity_check_matrices
 from hex_qec.simulation import AlwaysLongPolicy, StatefulAdaptiveKnillExecutor
@@ -206,3 +209,37 @@ def test_pairwise_statistics_uses_independent_binomial_comparisons():
     result = pairwise_statistics(rows, config)
     assert {row["pair"] for row in result} == {"A_vs_B", "B_vs_C", "A_vs_C"}
     assert all("fisher_p_value" in row and "holm_adjusted_p_value" in row for row in result)
+
+
+def test_parallel_diagnostic_runs_all_three_workflows(tmp_path):
+    args = _parser().parse_args([
+        "--smoke",
+        "--num-workers", "1",
+        "--initial-chunk-shots", "1",
+        "--max-chunk-shots", "32",
+        "--output-dir", str(tmp_path),
+    ])
+    config = DiagnosticConfig(
+        distances=(3,),
+        physical_errors=(0.0,),
+        shots=256,
+        batch_size=256,
+        output_dir=tmp_path,
+        parallel_num_workers=args.num_workers,
+        parallel_initial_chunk_shots=args.initial_chunk_shots,
+        parallel_max_chunk_shots=args.max_chunk_shots,
+    )
+    options = _parallel_options(config)
+    assert options is not None
+    assert options.initial_chunk_shots == 256
+    assert options.max_chunk_shots == 256
+
+    report = run_diagnostic(config)
+    assert report["execution"]["backend"] == "parallel_spawn_workers"
+    assert report["structural_checks"][0]["checks"]["all_passed"]
+    assert len(report["monte_carlo"]["base"]) == 3
+    assert {row["workflow"] for row in report["monte_carlo"]["base"]} == {
+        "legacy_static",
+        "stateful_contiguous_long",
+        "adaptive_forced_long",
+    }

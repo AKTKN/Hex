@@ -13,6 +13,7 @@ import json
 import platform
 import subprocess
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
@@ -31,9 +32,11 @@ import stimbposd
 from hex_qec.circuit_generation import get_parity_check_matrices
 from hex_qec.decoders import (
     dem_only_max_confidence,
+    HexBPLSDDecoder,
     make_bplsd_decoder_generator,
 )
 from hex_qec.modularisation import AdaptiveSERounds
+from hex_qec.parallel import ParallelExecutionOptions
 from hex_qec.protocols import knill_online_offline_adaptive
 from hex_qec.simulation import (
     AlwaysLongPolicy,
@@ -51,6 +54,42 @@ BPLSD_OPTIONS = {
     "lsd_order": 0,
     "always_run_lsd": True,
 }
+
+
+class PickleableBPLSDGenerator:
+    """Equivalent BP-LSD factory represented as a spawn-safe callable."""
+
+    # ``python -m profiling.adaptive_walltime_profile`` executes the parent
+    # copy as ``__main__`` while spawn imports the worker copy by package name.
+    # Keep the protocol fingerprint stable across those two module names.
+    __hex_parallel_name__ = "profiling.adaptive_walltime_profile.PickleableBPLSDGenerator"
+
+    def __init__(
+        self,
+        physical_error: float,
+        *,
+        alpha: float = 2.0,
+        decoder_options: dict[str, Any] | None = None,
+    ) -> None:
+        self.physical_error = physical_error
+        self.alpha = alpha
+        self.decoder_options = dict(decoder_options or {})
+
+    def __call__(self, pcm, weights=None):
+        if weights is None:
+            error_channel = np.full(pcm.shape[1], self.physical_error, dtype=float)
+        else:
+            error_channel = np.asarray(weights, dtype=float)
+            if error_channel.shape != (pcm.shape[1],):
+                raise ValueError(
+                    "BP-LSD error_channel must have one probability per PCM column"
+                )
+        return HexBPLSDDecoder(
+            pcm,
+            error_channel,
+            alpha=self.alpha,
+            **self.decoder_options,
+        )
 
 RAW_COLUMNS = [
     "shot_index",
@@ -86,6 +125,14 @@ SUMMARY_COLUMNS = [
     "inclusive",
 ]
 
+PARALLEL_SUMMARY_COLUMNS = [
+    "execution_backend", "workers", "shots", "logical_errors",
+    "logical_error_rate", "wall_time_seconds", "shots_per_second",
+    "distance", "physical_error", "short_rounds", "long_rounds", "policy",
+    "pauli", "num_teleportations", "seed", "target_chunk_seconds",
+    "initial_chunk_shots", "max_chunk_shots", "checkpoint_path", "git_sha",
+]
+
 
 def _version(module: Any) -> str:
     return str(getattr(module, "__version__", "unknown"))
@@ -110,6 +157,23 @@ def _arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--long-rounds", type=int, default=None)
     parser.add_argument("--num-shots", type=int, default=5)
     parser.add_argument("--warmup-shots", type=int, default=1)
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help="enable aggregate spawn-based profiling with this many workers",
+    )
+    parser.add_argument("--target-chunk-seconds", type=float, default=1.0)
+    parser.add_argument("--initial-chunk-shots", type=int, default=1)
+    parser.add_argument("--max-chunk-shots", type=int, default=1024)
+    parser.add_argument("--checkpoint-path", type=Path, default=None)
+    parser.add_argument(
+        "--parallel-verbose",
+        type=int,
+        choices=(0, 1, 2),
+        default=0,
+        help="parallel manager verbosity: 0 quiet, 1 progress, 2 detailed",
+    )
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument(
         "--policy",
@@ -649,6 +713,100 @@ def _write_plot(path: Path, rows: list[dict[str, Any]]) -> None:
     plt.close(figure)
 
 
+def _write_parallel_profile(
+    output_dir: Path,
+    output_prefix: str,
+    *,
+    args: argparse.Namespace,
+    long_rounds: int,
+    policy_name: str,
+    result: Any,
+    options: ParallelExecutionOptions,
+    metadata: dict[str, Any],
+    wall_time_seconds: float,
+) -> None:
+    """Write aggregate timing artifacts for a multiprocessing profile."""
+
+    row = {
+        "execution_backend": "parallel_spawn_workers",
+        "workers": options.num_workers,
+        "shots": result.shots,
+        "logical_errors": result.logical_errors,
+        "logical_error_rate": result.logical_error_rate,
+        "wall_time_seconds": _format_float(wall_time_seconds),
+        "shots_per_second": _format_float(result.shots / wall_time_seconds)
+        if wall_time_seconds > 0
+        else "0",
+        "distance": args.distance,
+        "physical_error": args.physical_error,
+        "short_rounds": args.short_rounds,
+        "long_rounds": long_rounds,
+        "policy": policy_name,
+        "pauli": args.pauli,
+        "num_teleportations": args.num_teleportations,
+        "seed": args.seed,
+        "target_chunk_seconds": options.target_chunk_seconds,
+        "initial_chunk_shots": options.initial_chunk_shots,
+        "max_chunk_shots": options.max_chunk_shots,
+        "checkpoint_path": str(options.checkpoint_path)
+        if options.checkpoint_path is not None
+        else "",
+        "git_sha": metadata.get("git_sha", "unknown"),
+    }
+    _write_csv(
+        output_dir / f"{output_prefix}_parallel_summary.csv",
+        PARALLEL_SUMMARY_COLUMNS,
+        [row],
+    )
+
+    with (output_dir / f"{output_prefix}_parallel_report.md").open("w") as handle:
+        handle.write("# Adaptive Knill parallel wall-time profile\n\n")
+        handle.write(
+            "This profile measures parent-process wall time for the optional "
+            "spawn-based adaptive executor. It reports aggregate statistics; "
+            "worker-local `WallTimeProfiler` events are not collected.\n\n"
+        )
+        handle.write("## Configuration\n\n```json\n")
+        handle.write(json.dumps({
+            "distance": args.distance,
+            "physical_error": args.physical_error,
+            "short_rounds": args.short_rounds,
+            "long_rounds": long_rounds,
+            "num_shots": args.num_shots,
+            "policy": policy_name,
+            "pauli": args.pauli,
+            "num_teleportations": args.num_teleportations,
+            "seed": args.seed,
+            "decoder": "BP-LSD",
+            "decoder_options": BPLSD_OPTIONS,
+            "parallel_options": {
+                "num_workers": options.num_workers,
+                "target_chunk_seconds": options.target_chunk_seconds,
+                "initial_chunk_shots": options.initial_chunk_shots,
+                "max_chunk_shots": options.max_chunk_shots,
+                "checkpoint_path": str(options.checkpoint_path)
+                if options.checkpoint_path is not None
+                else None,
+            },
+        }, indent=2))
+        handle.write("\n```\n\n## Aggregate timing\n\n")
+        handle.write(f"- Parent wall time: **{_format_float(wall_time_seconds)} s**\n")
+        handle.write(
+            f"- Throughput: **{_format_float(result.shots / wall_time_seconds if wall_time_seconds else 0.0)} shots/s**\n"
+        )
+        handle.write(f"- Logical errors: **{result.logical_errors}/{result.shots}**\n")
+        handle.write(f"- Logical error rate: **{result.logical_error_rate:.9g}**\n\n")
+        handle.write("## Adaptive branch statistics\n\n")
+        for pair in result.bell_pair_stats:
+            handle.write(
+                f"- `{pair.pair_id}`: fallback={pair.pair_fallback_rate:.6g}, "
+                f"mean effective rounds={pair.mean_effective_rounds:.6g}\n"
+            )
+        handle.write("\n## Software provenance\n\n")
+        for key, value in metadata.items():
+            handle.write(f"- `{key}`: `{value}`\n")
+
+
 def run(args: argparse.Namespace) -> Any:
     if args.num_shots <= 0 or args.warmup_shots < 0:
         raise ValueError("num-shots must be positive and warmup-shots cannot be negative")
@@ -657,6 +815,11 @@ def run(args: argparse.Namespace) -> Any:
     long_rounds = args.distance if args.long_rounds is None else args.long_rounds
     if args.short_rounds < 1 or args.short_rounds >= long_rounds:
         raise ValueError("short-rounds must be at least 1 and strictly less than long-rounds")
+    num_workers = getattr(args, "num_workers", None)
+    if num_workers is not None and args.warmup_shots:
+        raise ValueError(
+            "warmup-shots is unavailable for parallel profiling; use --warmup-shots 0"
+        )
 
     if args.policy == "always-long":
         policy = AlwaysLongPolicy()
@@ -676,6 +839,53 @@ def run(args: argparse.Namespace) -> Any:
         "stimbposd": _version(stimbposd),
         "seed": args.seed,
     }
+    if num_workers is not None:
+        parity_checks = get_parity_check_matrices("surface", args.distance)
+        offline_decoder = PickleableBPLSDGenerator(
+            args.physical_error,
+            alpha=2.0,
+            decoder_options=BPLSD_OPTIONS,
+        )
+        schedule = AdaptiveSERounds(args.short_rounds, long_rounds, policy)
+        options = ParallelExecutionOptions(
+            num_workers=num_workers,
+            target_chunk_seconds=getattr(args, "target_chunk_seconds", 1.0),
+            initial_chunk_shots=getattr(args, "initial_chunk_shots", 1),
+            max_chunk_shots=getattr(args, "max_chunk_shots", 1024),
+            checkpoint_path=getattr(args, "checkpoint_path", None),
+            verbose=getattr(args, "parallel_verbose", 0),
+        )
+        start = time.perf_counter()
+        result = knill_online_offline_adaptive(
+            parity_checks,
+            schedule,
+            online_decoder_generator=pymatching.Matching.from_check_matrix,
+            offline_decoder_generator=offline_decoder,
+            matchable_offline_decoding=False,
+            physical_error=args.physical_error,
+            max_shots=args.num_shots,
+            max_errors_before_halting=10**9,
+            pauli=args.pauli,
+            num_teleportations=args.num_teleportations,
+            confidence_aggregator=dem_only_max_confidence,
+            detail_level="summary",
+            batch_size=1,
+            seed=args.seed,
+            surface_code=True,
+            parallel_options=options,
+        )
+        _write_parallel_profile(
+            args.output_dir,
+            args.output_prefix,
+            args=args,
+            long_rounds=long_rounds,
+            policy_name=policy_name,
+            result=result,
+            options=options,
+            metadata=metadata,
+            wall_time_seconds=time.perf_counter() - start,
+        )
+        return result
     profiler = WallTimeProfiler(metadata=metadata | {"policy": policy_name})
     with profiler.context_scope(phase="setup", shot_index=-1):
         with profiler.section("setup.parity_check_loading", absolute=True):

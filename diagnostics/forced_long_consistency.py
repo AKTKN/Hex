@@ -16,7 +16,7 @@ import math
 import platform
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -42,6 +42,12 @@ from hex_qec.modularisation import (
     no_measurement_module,
 )
 from hex_qec.protocols import knill_online_offline, knill_online_offline_adaptive
+from hex_qec.parallel import (
+    ChunkResult,
+    ParallelExecutionOptions,
+    ParallelJobSpec,
+    ParallelManager,
+)
 from hex_qec.simulation import (
     AlwaysLongPolicy,
     StatefulAdaptiveKnillExecutor,
@@ -405,13 +411,39 @@ class DiagnosticConfig:
     output_dir: Path = Path("diagnostics/results/forced_long_consistency")
     overwrite: bool = False
     continue_after_structural_failure: bool = False
+    parallel_num_workers: int | str | None = None
+    parallel_target_chunk_seconds: float = 1.0
+    parallel_initial_chunk_shots: int = 1
+    parallel_max_chunk_shots: int = 1024
+    parallel_checkpoint_path: Path | None = None
+    parallel_verbose: int = 0
+
+    def __post_init__(self) -> None:
+        if self.parallel_num_workers is not None and self.parallel_num_workers != "auto":
+            if not isinstance(self.parallel_num_workers, int) or self.parallel_num_workers < 1:
+                raise ValueError("parallel_num_workers must be 'auto' or positive")
+        if self.parallel_target_chunk_seconds <= 0:
+            raise ValueError("parallel_target_chunk_seconds must be positive")
+        if self.parallel_initial_chunk_shots < 1:
+            raise ValueError("parallel_initial_chunk_shots must be positive")
+        if self.parallel_max_chunk_shots < self.parallel_initial_chunk_shots:
+            raise ValueError(
+                "parallel_max_chunk_shots cannot be less than parallel_initial_chunk_shots"
+            )
+        if self.parallel_verbose not in (0, 1, 2):
+            raise ValueError("parallel_verbose must be 0, 1, or 2")
 
     @property
     def signature(self) -> str:
         # The requested extension size changes only which additional rows are
         # requested; it must not make an already completed base run
         # incompatible with the follow-up invocation.
-        payload = {key: str(value) for key, value in asdict(self).items() if key not in {"output_dir", "overwrite", "extended_multiplier"}}
+        payload = {key: str(value) for key, value in asdict(self).items() if key not in {
+            "output_dir", "overwrite", "extended_multiplier",
+            "parallel_num_workers", "parallel_target_chunk_seconds",
+            "parallel_initial_chunk_shots", "parallel_max_chunk_shots",
+            "parallel_checkpoint_path", "parallel_verbose",
+        }}
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
 
 
@@ -541,6 +573,127 @@ def run_workflow_c(parity_check_tuple: tuple[Any, ...], config: DiagnosticConfig
     return result.samples_performed, result.logical_errors
 
 
+@dataclass(frozen=True)
+class DiagnosticParallelJobFactory:
+    """Pickleable construction recipe for one diagnostic workflow point."""
+
+    parity_check_tuple: tuple[Any, ...]
+    config: DiagnosticConfig
+    workflow: str
+    distance: int
+    physical_error: float
+    stage: str
+
+    def job_id_for(self, seed: int | None) -> str:
+        payload = {
+            "diagnostic": "forced_long_consistency",
+            "workflow": self.workflow,
+            "distance": self.distance,
+            "physical_error": self.physical_error,
+            "stage": self.stage,
+            "config_signature": self.config.signature,
+            "seed": seed,
+        }
+        digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode()
+        ).hexdigest()[:16]
+        return f"diagnostic-{digest}"
+
+    @property
+    def job_id(self) -> str:
+        return self.job_id_for(None)
+
+    def prepare(self) -> "DiagnosticParallelPreparedJob":
+        return DiagnosticParallelPreparedJob(self)
+
+
+@dataclass
+class DiagnosticParallelPreparedJob:
+    """Persistent worker state for one diagnostic workflow."""
+
+    factory: DiagnosticParallelJobFactory
+
+    def __post_init__(self) -> None:
+        self.executor = None
+        if self.factory.workflow == "stateful_contiguous_long":
+            modules = build_fixed_modules(
+                self.factory.parity_check_tuple,
+                self.factory.distance,
+                self.factory.physical_error,
+                num_teleportations=self.factory.config.num_teleportations,
+                pauli=self.factory.config.pauli,
+                surface_code=self.factory.config.surface_code,
+            )
+            self.executor = StatefulAdaptiveKnillExecutor(
+                modules, batch_size=1, seed=None
+            )
+        elif self.factory.workflow == "adaptive_forced_long":
+            modules = build_adaptive_modules(
+                self.factory.parity_check_tuple,
+                self.factory.distance,
+                self.factory.physical_error,
+                short_rounds=self.factory.config.short_rounds,
+                num_teleportations=self.factory.config.num_teleportations,
+                pauli=self.factory.config.pauli,
+                surface_code=self.factory.config.surface_code,
+            )
+            self.executor = StatefulAdaptiveKnillExecutor(
+                modules, batch_size=1, seed=None
+            )
+        elif self.factory.workflow != "legacy_static":
+            raise ValueError(f"unknown diagnostic workflow {self.factory.workflow!r}")
+
+    def run_chunk(
+        self,
+        shot_start: int,
+        shot_count: int,
+        seed_base: int | None,
+    ) -> ChunkResult:
+        seed = (
+            None
+            if seed_base is None
+            else (seed_base + shot_start) % (2**64)
+        )
+        started = time.perf_counter()
+        if self.factory.workflow == "legacy_static":
+            chunk_config = replace(self.factory.config, shots=shot_count)
+            shots, errors = run_workflow_a(
+                self.factory.parity_check_tuple,
+                chunk_config,
+                self.factory.distance,
+                self.factory.physical_error,
+                seed,
+            )
+        else:
+            original_seed = self.executor.seed
+            original_batch_size = self.executor.batch_size
+            try:
+                self.executor.seed = seed
+                self.executor.batch_size = shot_count
+                result = self.executor.simulate_result(
+                    shot_count,
+                    10**12,
+                    detail_level="summary",
+                )
+                shots, errors = result.shots, result.logical_errors
+            finally:
+                self.executor.seed = original_seed
+                self.executor.batch_size = original_batch_size
+        if shots != shot_count:
+            raise RuntimeError(
+                f"diagnostic workflow returned {shots} shots for a "
+                f"{shot_count}-shot lease"
+            )
+        return ChunkResult(
+            job_id=self.factory.job_id_for(seed_base),
+            lease_id="worker-assigned",
+            shot_start=shot_start,
+            shots=int(shots),
+            logical_errors=int(errors),
+            runtime_seconds=time.perf_counter() - started,
+        )
+
+
 def _stable_seed(base_seed: int, workflow: str, distance: int, physical_error: float, stage: str) -> int:
     data = f"{base_seed}|{workflow}|{distance}|{physical_error:.17g}|{stage}".encode()
     return int.from_bytes(hashlib.blake2b(data, digest_size=8).digest(), "little")
@@ -576,6 +729,168 @@ class CheckpointStore:
             writer = csv.DictWriter(handle, fieldnames=self.fields)
             writer.writeheader()
             writer.writerows(self.rows)
+
+
+def _parallel_options(config: DiagnosticConfig) -> ParallelExecutionOptions | None:
+    if config.parallel_num_workers is None:
+        return None
+    # The legacy compiled workflow returns complete static batches.  Keep
+    # every lease large enough for that workflow, even when the user requests
+    # smaller adaptive chunks.
+    minimum_chunk = max(config.batch_size, 256)
+    return ParallelExecutionOptions(
+        num_workers=config.parallel_num_workers,
+        target_chunk_seconds=config.parallel_target_chunk_seconds,
+        initial_chunk_shots=max(config.parallel_initial_chunk_shots, minimum_chunk),
+        max_chunk_shots=max(config.parallel_max_chunk_shots, minimum_chunk),
+        checkpoint_path=config.parallel_checkpoint_path,
+        verbose=config.parallel_verbose,
+    )
+
+
+def _run_parallel_stage(
+    config: DiagnosticConfig,
+    store: CheckpointStore,
+    parity_check_tuple: tuple[Any, ...],
+    distance: int,
+    physical_error: float,
+    stage: str,
+    shots: int,
+    git_sha: str,
+) -> float:
+    """Run missing A/B/C rows for one diagnostic point in worker processes."""
+
+    specs: list[ParallelJobSpec] = []
+    for workflow in WORKFLOWS:
+        seed = _stable_seed(
+            config.base_seed, workflow, distance, physical_error, stage
+        )
+        probe = _workflow_row(
+            config, workflow, distance, physical_error, stage, seed, shots, 0, git_sha
+        )
+        if store.contains(probe):
+            continue
+        factory = DiagnosticParallelJobFactory(
+            parity_check_tuple=parity_check_tuple,
+            config=config,
+            workflow=workflow,
+            distance=distance,
+            physical_error=physical_error,
+            stage=stage,
+        )
+        specs.append(
+            ParallelJobSpec(
+                job_id=factory.job_id_for(seed),
+                factory=factory,
+                max_shots=shots,
+                max_errors=10**12,
+                seed_base=seed,
+                metadata={
+                    "diagnostic": "forced_long_consistency",
+                    "workflow": workflow,
+                    "distance": distance,
+                    "physical_error": physical_error,
+                    "stage": stage,
+                },
+                config_fingerprint=factory.job_id_for(seed),
+            )
+        )
+    if not specs:
+        return 0.0
+
+    started = time.perf_counter()
+    options = _parallel_options(config)
+    if options is None:
+        raise RuntimeError("parallel diagnostic stage requires parallel options")
+    if options.checkpoint_path is not None:
+        checkpoint = options.checkpoint_path
+        options = replace(
+            options,
+            checkpoint_path=checkpoint.with_name(
+                f"{checkpoint.stem}_{stage}{checkpoint.suffix}"
+            ),
+        )
+    parallel_result = ParallelManager(options).run(specs)
+    jobs = {job.job_id: job for job in parallel_result.jobs}
+    for spec in specs:
+        job = jobs[spec.job_id]
+        seed = spec.seed_base
+        if seed is None:
+            raise RuntimeError("parallel diagnostic jobs require explicit seeds")
+        store.append(
+            _workflow_row(
+                config,
+                spec.factory.workflow,
+                distance,
+                physical_error,
+                stage,
+                seed,
+                job.shots,
+                job.logical_errors,
+                git_sha,
+            )
+        )
+    return time.perf_counter() - started
+
+
+def _run_stage(
+    config: DiagnosticConfig,
+    store: CheckpointStore,
+    parity_check_tuple: tuple[Any, ...],
+    distance: int,
+    physical_error: float,
+    stage: str,
+    git_sha: str,
+) -> float:
+    """Run one base/extended stage using the selected backend."""
+
+    if config.parallel_num_workers is not None:
+        return _run_parallel_stage(
+            config,
+            store,
+            parity_check_tuple,
+            distance,
+            physical_error,
+            stage,
+            config.shots,
+            git_sha,
+        )
+    started = time.perf_counter()
+    for workflow in WORKFLOWS:
+        seed = _stable_seed(
+            config.base_seed, workflow, distance, physical_error, stage
+        )
+        probe = _workflow_row(
+            config, workflow, distance, physical_error, stage, seed, config.shots, 0, git_sha
+        )
+        if store.contains(probe):
+            continue
+        runner = {
+            "legacy_static": run_workflow_a,
+            "stateful_contiguous_long": run_workflow_b,
+            "adaptive_forced_long": run_workflow_c,
+        }[workflow]
+        shots, errors = runner(
+            parity_check_tuple,
+            config,
+            distance,
+            physical_error,
+            seed,
+        )
+        store.append(
+            _workflow_row(
+                config,
+                workflow,
+                distance,
+                physical_error,
+                stage,
+                seed,
+                shots,
+                errors,
+                git_sha,
+            )
+        )
+    return time.perf_counter() - started
 
 
 def _version(package: Any) -> str:
@@ -872,6 +1187,18 @@ def run_diagnostic(config: DiagnosticConfig) -> dict[str, Any]:
     raw_path = config.output_dir / "raw_counts.csv"
     store = CheckpointStore(raw_path, overwrite=config.overwrite)
     git_sha = _git_sha()
+    execution = {
+        "backend": "parallel_spawn_workers"
+        if config.parallel_num_workers is not None
+        else "serial",
+        "parallel": config.parallel_num_workers is not None,
+        "num_workers": config.parallel_num_workers,
+        "parallel_checkpoint_path": (
+            str(config.parallel_checkpoint_path)
+            if config.parallel_checkpoint_path is not None
+            else None
+        ),
+    }
     structural = []
     for distance in config.distances:
         parity = get_parity_check_matrices("surface", distance)
@@ -882,20 +1209,17 @@ def run_diagnostic(config: DiagnosticConfig) -> dict[str, Any]:
     structural_failure = any(not item["checks"]["all_passed"] for item in structural)
     if structural_failure and not config.continue_after_structural_failure:
         raw_rows = _read_rows(raw_path)
-        report = {"schema_version": 1, "diagnostic": "forced_long_consistency", "git_sha": git_sha, "configuration": json_safe(asdict(config)), "structural_checks": structural, "monte_carlo": {"base": [], "extended": [], "pooled": []}, "pairwise_statistics": [], "diagnosis": classify_diagnostic(True, [], margin_supplied=config.equivalence_margin is not None, structural_checks=structural)}
+        report = {"schema_version": 1, "diagnostic": "forced_long_consistency", "git_sha": git_sha, "configuration": json_safe(asdict(config)), "execution": execution, "structural_checks": structural, "monte_carlo": {"base": [], "extended": [], "pooled": []}, "pairwise_statistics": [], "diagnosis": classify_diagnostic(True, [], margin_supplied=config.equivalence_margin is not None, structural_checks=structural)}
         _write_reports(config.output_dir, report)
         return report
     for distance in config.distances:
         parity = get_parity_check_matrices("surface", distance)
         for physical_error in config.physical_errors:
-            for workflow in WORKFLOWS:
-                seed = _stable_seed(config.base_seed, workflow, distance, physical_error, "base")
-                probe = _workflow_row(config, workflow, distance, physical_error, "base", seed, config.shots, 0, git_sha)
-                if store.contains(probe):
-                    continue
-                runner = {"legacy_static": run_workflow_a, "stateful_contiguous_long": run_workflow_b, "adaptive_forced_long": run_workflow_c}[workflow]
-                shots, errors = runner(parity, config, distance, physical_error, seed)
-                store.append(_workflow_row(config, workflow, distance, physical_error, "base", seed, shots, errors, git_sha))
+            execution["base_wall_time_seconds"] = execution.get(
+                "base_wall_time_seconds", 0.0
+            ) + _run_stage(
+                config, store, parity, distance, physical_error, "base", git_sha
+            )
     base_rows = [_count_row(row) for row in store.rows if row["stage"] == "base"]
     pooled_rows = list(base_rows)
     extended_rows: list[dict[str, Any]] = []
@@ -907,14 +1231,17 @@ def run_diagnostic(config: DiagnosticConfig) -> dict[str, Any]:
             parity = get_parity_check_matrices("surface", distance_int)
             extra_shots = int(round(config.shots * (config.extended_multiplier - 1)))
             extra_config = DiagnosticConfig(**{**asdict(config), "shots": extra_shots, "output_dir": config.output_dir, "overwrite": False})
-            for workflow in WORKFLOWS:
-                seed = _stable_seed(config.base_seed, workflow, distance_int, error_float, "extended")
-                probe = _workflow_row(config, workflow, distance_int, error_float, "extended", seed, extra_shots, 0, git_sha)
-                if store.contains(probe):
-                    continue
-                runner = {"legacy_static": run_workflow_a, "stateful_contiguous_long": run_workflow_b, "adaptive_forced_long": run_workflow_c}[workflow]
-                shots, errors = runner(parity, extra_config, distance_int, error_float, seed)
-                store.append(_workflow_row(config, workflow, distance_int, error_float, "extended", seed, shots, errors, git_sha))
+            execution["extended_wall_time_seconds"] = execution.get(
+                "extended_wall_time_seconds", 0.0
+            ) + _run_stage(
+                extra_config,
+                store,
+                parity,
+                distance_int,
+                error_float,
+                "extended",
+                git_sha,
+            )
         extended_rows = [_count_row(row) for row in store.rows if row["stage"] == "extended"]
         pooled_rows = []
         for distance in config.distances:
@@ -925,7 +1252,7 @@ def run_diagnostic(config: DiagnosticConfig) -> dict[str, Any]:
     else:
         pooled_rows = [{**row, "stage": "pooled"} for row in base_rows]
     stats = pairwise_statistics(pooled_rows, config) if not structural_failure or config.continue_after_structural_failure else []
-    report = {"schema_version": 1, "diagnostic": "forced_long_consistency", "git_sha": git_sha, "configuration": json_safe(asdict(config)), "structural_checks": structural, "monte_carlo": {"base": base_rows, "extended": extended_rows, "pooled": pooled_rows}, "pairwise_statistics": stats, "diagnosis": classify_diagnostic(structural_failure, stats, margin_supplied=config.equivalence_margin is not None, structural_checks=structural)}
+    report = {"schema_version": 1, "diagnostic": "forced_long_consistency", "git_sha": git_sha, "configuration": json_safe(asdict(config)), "execution": execution, "structural_checks": structural, "monte_carlo": {"base": base_rows, "extended": extended_rows, "pooled": pooled_rows}, "pairwise_statistics": stats, "diagnosis": classify_diagnostic(structural_failure, stats, margin_supplied=config.equivalence_margin is not None, structural_checks=structural)}
     _write_reports(config.output_dir, report)
     return report
 
@@ -961,6 +1288,23 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=Path("diagnostics/results/forced_long_consistency"))
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--continue-after-structural-failure", action="store_true")
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=None,
+        help="run the Monte Carlo A/B/C workflows with spawn workers",
+    )
+    parser.add_argument("--target-chunk-seconds", type=float, default=1.0)
+    parser.add_argument("--initial-chunk-shots", type=int, default=1)
+    parser.add_argument("--max-chunk-shots", type=int, default=1024)
+    parser.add_argument("--checkpoint-path", type=Path, default=None)
+    parser.add_argument(
+        "--parallel-verbose",
+        type=int,
+        choices=(0, 1, 2),
+        default=0,
+        help="parallel manager verbosity: 0 quiet, 1 progress, 2 detailed",
+    )
     parser.add_argument("--smoke", action="store_true")
     return parser
 
@@ -978,6 +1322,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         batch_size=args.batch_size, equivalence_margin=args.equivalence_margin, base_seed=args.base_seed,
         alpha=args.alpha, surface_code=args.surface_code, extended_multiplier=args.extended_multiplier, output_dir=args.output_dir, overwrite=args.overwrite,
         continue_after_structural_failure=args.continue_after_structural_failure,
+        parallel_num_workers=args.num_workers,
+        parallel_target_chunk_seconds=args.target_chunk_seconds,
+        parallel_initial_chunk_shots=args.initial_chunk_shots,
+        parallel_max_chunk_shots=args.max_chunk_shots,
+        parallel_checkpoint_path=args.checkpoint_path,
+        parallel_verbose=args.parallel_verbose,
     )
     report = run_diagnostic(config)
     print(json.dumps({"classification": report["diagnosis"]["classification"], "structural_passed": all(item["checks"]["all_passed"] for item in report["structural_checks"]), "output_dir": str(config.output_dir)}, indent=2))

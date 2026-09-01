@@ -132,3 +132,21 @@ PYTHONPATH=src python -m validation.plot_knill_repro --all
 Choose the shot count for the desired precision; it must be a positive
 multiple of the legacy 256-shot batch size.  Use `--pauli x` to validate the
 other logical basis.
+
+## Parallel adaptive validation
+
+The adaptive forced-long runner can execute its adaptive workflow with
+persistent spawn workers while the legacy fixed-depth reference remains the
+serial compatibility baseline. For a small local run:
+
+```bash
+PYTHONPATH=src python -m validation.adaptive_forced_long_repro \
+  --smoke --overwrite --num-workers 2 --initial-chunk-shots 1 \
+  --max-chunk-shots 32
+```
+
+Parallel adaptive validation uses summary-level results and records the
+parent-process runtime in the raw CSV. Scheduling controls are excluded from
+the configuration signature, so rows can be resumed with different worker or
+chunk settings. Use `--parallel-checkpoint-path` for an optional manager
+checkpoint and `--parallel-verbose 1` or `2` for progress diagnostics.

@@ -37,6 +37,9 @@ def _matrix_fingerprint(matrix: Any) -> str:
 
 
 def _callable_name(value: Any) -> str:
+    stable_name = getattr(value, "__hex_parallel_name__", None)
+    if stable_name is not None:
+        return str(stable_name)
     return f"{getattr(value, '__module__', type(value).__module__)}.{getattr(value, '__qualname__', type(value).__qualname__)}"
 
 

@@ -9,6 +9,7 @@ import pymatching
 
 from hex_qec.circuit_generation import get_parity_check_matrices
 from hex_qec.modularisation import AdaptiveSERounds
+from hex_qec.parallel import ParallelExecutionOptions
 from hex_qec.protocols import knill_online_offline, knill_online_offline_adaptive
 from hex_qec.simulation import AlwaysLongPolicy
 
@@ -117,19 +118,43 @@ def run_validation(config):
                     f"errors={legacy_errors}, runtime={legacy_runtime:.2f}s",
                 )
                 progress(config, "adaptive", "  adaptive_forced_long running...")
+                parallel_options = None
+                adaptive_detail_level = "analysis"
+                adaptive_batch_size = STATIC_BATCH_SIZE
+                if config.parallel_num_workers is not None:
+                    parallel_options = ParallelExecutionOptions(
+                        num_workers=config.parallel_num_workers,
+                        target_chunk_seconds=config.parallel_target_chunk_seconds,
+                        initial_chunk_shots=config.parallel_initial_chunk_shots,
+                        max_chunk_shots=config.parallel_max_chunk_shots,
+                        checkpoint_path=config.parallel_checkpoint_path,
+                        verbose=config.parallel_verbose,
+                    )
+                    adaptive_detail_level = "summary"
+                    # Worker leases determine their own batch size.  Keep the
+                    # serial value above so the default path is unchanged.
+                    adaptive_batch_size = 1
+                adaptive_start = time.perf_counter()
                 adaptive_result = knill_online_offline_adaptive(
                     parity_checks,
                     adaptive_schedule=schedule,
-                    detail_level="analysis",
-                    batch_size=STATIC_BATCH_SIZE,
+                    detail_level=adaptive_detail_level,
+                    batch_size=adaptive_batch_size,
+                    parallel_options=parallel_options,
                     **common,
+                )
+                adaptive_runtime = time.perf_counter() - adaptive_start
+                reported_adaptive_runtime = (
+                    adaptive_runtime
+                    if parallel_options is not None
+                    else adaptive_result.summary.runtime_seconds or 0.0
                 )
                 progress(
                     config,
                     "adaptive",
                     f"  adaptive_forced_long complete: shots={adaptive_result.shots}, "
                     f"errors={adaptive_result.logical_errors}, "
-                    f"runtime={adaptive_result.summary.runtime_seconds or 0.0:.2f}s, "
+                    f"runtime={reported_adaptive_runtime:.2f}s, "
                     f"pair_fallback_rate={adaptive_result.bell_pair_stats[0].pair_fallback_rate:.3f}, "
                     f"mean_rounds={adaptive_result.bell_pair_stats[0].mean_effective_rounds:.3f}",
                 )
@@ -158,7 +183,7 @@ def run_validation(config):
                         "adaptive_forced_long",
                         adaptive_result.shots,
                         adaptive_result.logical_errors,
-                        adaptive_result.summary.runtime_seconds,
+                        reported_adaptive_runtime,
                         adaptive_result.bell_pair_stats[0].pair_fallback_rate,
                         adaptive_result.bell_pair_stats[0].mean_effective_rounds,
                         len(adaptive_result.state_prep_stats),

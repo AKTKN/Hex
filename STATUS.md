@@ -1,8 +1,9 @@
 # Implementation status
 
-Date: 2026-08-31
-Branch: `hex-adaptive`  
-Base commit: `762a9f1` (`feat: Implement adaptive state preparation in Knill protocol`)
+Date: 2026-09-01
+Branch: `hex-parallel`
+Current implementation includes the parallel adaptive execution commits
+`f308513`, `9322a20`, and `9b582b2`.
 
 ## Completed checkpoints
 
@@ -163,6 +164,22 @@ Findings and decisions from the audit:
    rather than asserting an unconditional "must switch".
 
 ## Current implementation
+
+The profiling and adaptive forced-long validation entry points now accept
+optional spawn-worker settings. Serial profiling remains the default and
+retains detailed `WallTimeProfiler` artifacts. Parallel profiling uses a
+spawn-safe BP-LSD factory and writes aggregate parent wall-time artifacts;
+parallel validation uses summary-level adaptive results while retaining the
+legacy fixed-depth reference as the serial baseline. Parallel scheduling
+controls are excluded from validation configuration fingerprints so runs can
+resume with different worker/chunk settings.
+
+The independent `forced_long_consistency` diagnosis now parallelizes all
+three Monte Carlo workflows (legacy static A, stateful contiguous-long B, and
+adaptive forced-long C) with persistent spawn workers. Structural checks stay
+in the parent, and reports include an `execution` section with backend and
+stage timing. Diagnostic leases are raised to at least the legacy 256-shot
+batch size, and base/extended worker checkpoints use separate stage suffixes.
 
 The legacy repository remains fixed-round: its protocols build a complete
 static Stim circuit, precompute correction-to-measurement maps, sample in

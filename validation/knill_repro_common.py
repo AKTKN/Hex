@@ -48,6 +48,12 @@ class ValidationConfig:
     num_teleportations: int = 1
     surface_code: bool = True
     state_prep_rounds_are_distance: bool = True
+    parallel_num_workers: int | str | None = None
+    parallel_target_chunk_seconds: float = 1.0
+    parallel_initial_chunk_shots: int = 1
+    parallel_max_chunk_shots: int = 1024
+    parallel_checkpoint_path: Path | None = None
+    parallel_verbose: int = 0
 
     def __post_init__(self) -> None:
         if not self.distances or any(distance < 3 for distance in self.distances):
@@ -68,12 +74,27 @@ class ValidationConfig:
             raise ValueError("min_total_errors must be non-negative")
         if self.num_teleportations <= 0:
             raise ValueError("num_teleportations must be positive")
+        if self.parallel_num_workers is not None and self.parallel_num_workers != "auto":
+            if not isinstance(self.parallel_num_workers, int) or self.parallel_num_workers < 1:
+                raise ValueError("parallel_num_workers must be 'auto' or positive")
+        if self.parallel_target_chunk_seconds <= 0:
+            raise ValueError("parallel_target_chunk_seconds must be positive")
+        if self.parallel_initial_chunk_shots < 1:
+            raise ValueError("parallel_initial_chunk_shots must be positive")
+        if self.parallel_max_chunk_shots < self.parallel_initial_chunk_shots:
+            raise ValueError(
+                "parallel_max_chunk_shots cannot be less than parallel_initial_chunk_shots"
+            )
+        if self.parallel_verbose not in (0, 1, 2):
+            raise ValueError("parallel_verbose must be 0, 1, or 2")
 
     def as_json(self) -> dict[str, object]:
         values = asdict(self)
         values["distances"] = list(self.distances)
         values["physical_errors"] = list(self.physical_errors)
         values["output_dir"] = str(self.output_dir)
+        if self.parallel_checkpoint_path is not None:
+            values["parallel_checkpoint_path"] = str(self.parallel_checkpoint_path)
         return values
 
 
@@ -106,6 +127,48 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_MIN_TOTAL_ERRORS_FOR_INFERENCE,
         help="minimum pooled error events before a comparison can be conclusive",
     )
+    parser.add_argument(
+        "--num-workers",
+        dest="parallel_num_workers",
+        type=int,
+        default=None,
+        help="adaptive validation workers; leave unset for the serial backend",
+    )
+    parser.add_argument(
+        "--target-chunk-seconds",
+        dest="parallel_target_chunk_seconds",
+        type=float,
+        default=1.0,
+        help="target wall time for each adaptive worker chunk",
+    )
+    parser.add_argument(
+        "--initial-chunk-shots",
+        dest="parallel_initial_chunk_shots",
+        type=int,
+        default=1,
+        help="initial adaptive worker chunk size",
+    )
+    parser.add_argument(
+        "--max-chunk-shots",
+        dest="parallel_max_chunk_shots",
+        type=int,
+        default=1024,
+        help="maximum adaptive worker chunk size",
+    )
+    parser.add_argument(
+        "--parallel-checkpoint-path",
+        dest="parallel_checkpoint_path",
+        type=Path,
+        default=None,
+        help="optional checkpoint file for the adaptive parallel manager",
+    )
+    parser.add_argument(
+        "--parallel-verbose",
+        type=int,
+        choices=(0, 1, 2),
+        default=0,
+        help="parallel manager verbosity: 0 quiet, 1 progress, 2 detailed",
+    )
 
 
 def config_from_args(args: argparse.Namespace) -> ValidationConfig:
@@ -134,6 +197,12 @@ def config_from_args(args: argparse.Namespace) -> ValidationConfig:
         smoke=args.smoke,
         alpha=args.alpha,
         min_total_errors=args.min_total_errors,
+        parallel_num_workers=getattr(args, "parallel_num_workers", None),
+        parallel_target_chunk_seconds=getattr(args, "parallel_target_chunk_seconds", 1.0),
+        parallel_initial_chunk_shots=getattr(args, "parallel_initial_chunk_shots", 1),
+        parallel_max_chunk_shots=getattr(args, "parallel_max_chunk_shots", 1024),
+        parallel_checkpoint_path=getattr(args, "parallel_checkpoint_path", None),
+        parallel_verbose=getattr(args, "parallel_verbose", 0),
     )
 
 
@@ -162,6 +231,18 @@ def configuration_signature(validation_name: str, config: ValidationConfig) -> s
     values.pop("output_dir", None)
     values.pop("overwrite", None)
     values.pop("verbose", None)
+    # Scheduling controls do not change the sampled parameter point.  This
+    # lets a run resume the same validation rows with a different worker
+    # count or chunk tuning.
+    for key in (
+        "parallel_num_workers",
+        "parallel_target_chunk_seconds",
+        "parallel_initial_chunk_shots",
+        "parallel_max_chunk_shots",
+        "parallel_checkpoint_path",
+        "parallel_verbose",
+    ):
+        values.pop(key, None)
     payload = json.dumps(
         {"validation": validation_name, **values},
         sort_keys=True,
