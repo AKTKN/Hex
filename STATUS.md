@@ -518,6 +518,31 @@ measurement/reference/correction processing is 5.17%. Accounted time is
 logical errors and all relevant regression tests passed. No further
 optimization was implemented.
 
+## Independent forced-long consistency diagnostic
+
+Date: 2026-09-01
+
+Added the independent `diagnostics.forced_long_consistency` program and
+`tests/test_forced_long_consistency_diagnostic.py`. The diagnostic does not
+import or modify `validation/` and defines three workflows: legacy static A,
+stateful contiguous-long B using ordinary fixed-depth modules through
+`StatefulAdaptiveKnillExecutor`, and production adaptive forced-long C using
+`knill_online_offline_adaptive` with `AlwaysLongPolicy`.
+
+It checks exact state-preparation and short-plus-extra circuits, full physical
+instruction order, shared-record decoder endpoints, correction maps, the
+production synchronized permutation and correction round trips, final
+software-frame behavior, and exact reference-sample cache consistency. It
+also writes independent-binomial Wilson/Newcombe intervals, Fisher tests with
+one Holm family, optional 90% equivalence intervals, conservative
+classification, and resumable base/extended/pooled CSV/JSON/Markdown reports.
+
+The focused diagnostic tests passed (11 tests), the full suite passed (96
+tests), and the required smoke run passed all structural checks with 256 d=3,
+p=0 shots. The smoke classification was `statistically_inconclusive`, as no
+equivalence margin was supplied and the run was intentionally underpowered.
+No production source file or existing validation file was modified.
+
 ## Open issue / next action
 
 The remaining measured cost is downstream Knill processing and decoder work;

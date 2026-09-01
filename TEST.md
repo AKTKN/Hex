@@ -963,3 +963,28 @@ No adaptive simulator or core-code refactor was implemented or tested.
     errors and wrote the raw CSV, summary CSV, Markdown report, and PNG
     breakdown. This repeat measured 0.010170195 s/shot, with 6 warm-up
     reference-sample misses and 35 measured cache hits.
+
+## Independent forced-long consistency diagnostic
+
+117. `PYTHONPATH=src pytest -q tests/test_forced_long_consistency_diagnostic.py`
+
+    Outcome: PASS, 11 tests with the existing eight dependency deprecation
+    warnings. This covers physical instruction comparison, exact d=3 fixed /
+    adaptive-long state preparation for both bases, short-plus-extra physical
+    equality, production permutation order and bijection, correction-vector
+    round trips, shared-record decoder endpoints, reference-cache equality,
+    classification, JSON safety, pairwise statistics, and checkpoint resume.
+
+118. `PYTHONPATH=src pytest -q`
+
+    Outcome: PASS, 96 tests with the existing eight dependency deprecation
+    warnings.
+
+119. `PYTHONPATH=src python -m diagnostics.forced_long_consistency --smoke
+     --overwrite`
+
+    Outcome: PASS. The smoke run used d=3, p=0, one teleportation, 256 shots,
+    and AlwaysLong forced-long execution. All structural checks passed; the
+    intentionally underpowered no-margin result was classified as
+    `statistically_inconclusive`. Independent smoke reports were written
+    under `diagnostics/results/forced_long_consistency/`.
