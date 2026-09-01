@@ -4,7 +4,6 @@ import multiprocessing
 import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
 
@@ -108,14 +107,15 @@ class CorrectFakePrepared:
 
 
 def options(num_workers, **kwargs):
-    return ParallelExecutionOptions(
+    values = dict(
         num_workers=num_workers,
         target_chunk_seconds=1.0,
         initial_chunk_shots=1,
         max_chunk_shots=4,
         status_interval_seconds=0.05,
-        **kwargs,
     )
+    values.update(kwargs)
+    return ParallelExecutionOptions(**values)
 
 
 def make_job(job_id="job", shots=32, seed=100, factory=None):
@@ -151,6 +151,26 @@ def test_prepared_job_is_created_once_and_reused_across_chunks(tmp_path):
     result = ParallelManager(options(1)).run([make_job(shots=16, factory=factory)])
     assert result.shots == 16
     assert len(marker.read_text().splitlines()) == 1
+
+
+def test_fully_leased_small_job_does_not_repeatedly_prepare_workers(tmp_path):
+    marker = tmp_path / "prepared.txt"
+    factory = CorrectFakeFactory("job", marker_path=str(marker))
+    result = ParallelManager(
+        options(8, initial_chunk_shots=1, max_chunk_shots=1)
+    ).run([make_job(shots=2, factory=factory)])
+    assert result.shots == 2
+    # Several workers may legitimately prepare before the first two leases
+    # complete, but no worker may reload in a scheduler loop.
+    assert 1 <= len(marker.read_text().splitlines()) <= 8
+
+
+def test_more_workers_than_shots_have_no_duplicates_or_gaps():
+    result = ParallelManager(
+        options(8, initial_chunk_shots=1, max_chunk_shots=1)
+    ).run([make_job(shots=3)])
+    assert result.shots == 3
+    assert result.jobs[0].completed_ranges == ((0, 3),)
 
 
 def test_job_change_prepares_new_state_only_after_previous_job_completes(tmp_path):

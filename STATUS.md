@@ -551,6 +551,19 @@ no work stealing/distributed execution, and no support for non-pickleable
 decoder-generator closures in multiprocessing. Validation and diagnostics
 were not migrated.
 
+## Fully-leased scheduler fix
+
+Date: 2026-09-01
+
+Fixed `ParallelManager` so a job with no currently unassigned shots is not
+selected merely because it is not complete. Idle workers now wait without
+losing their job association or prepared state; after a chunk result, all
+eligible idle workers are retried. No checkpoint, fingerprint, physics,
+decoder, adaptive-executor, or serial protocol behavior was changed.
+
+Focused scheduler, worker, checkpoint, and adaptive tests passed, followed by
+the full suite (139 tests). Compilation and whitespace checks also passed.
+
 ## Independent forced-long consistency diagnostic
 
 Date: 2026-09-01

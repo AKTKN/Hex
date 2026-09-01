@@ -65,6 +65,29 @@ def test_multiple_active_workers_receive_disjoint_ranges():
     assert len({index for start, end in ranges for index in range(start, end)}) == 100
 
 
+def test_fully_leased_incomplete_job_has_no_allocatable_work():
+    state = make_state(shots=2)
+    assert ParallelManager._allocate_lease(state, 1) is not None
+    assert ParallelManager._allocate_lease(state, 1) is not None
+    assert not state.complete
+    assert not ParallelManager._has_unassigned_work(state)
+    assert ParallelManager._select_job(
+        {"job": state}, {0: WorkerState(0), 1: WorkerState(1)}
+    ) is None
+
+
+def test_fair_selection_ignores_fully_leased_job():
+    fully_leased = make_state("a", 2)
+    assert ParallelManager._allocate_lease(fully_leased, 1) is not None
+    assert ParallelManager._allocate_lease(fully_leased, 1) is not None
+    available = make_state("b", 2)
+    selected = ParallelManager._select_job(
+        {"a": fully_leased, "b": available},
+        {0: WorkerState(0, job_id="a"), 1: WorkerState(1, job_id="a")},
+    )
+    assert selected is available
+
+
 def test_checkpointed_hole_is_skipped_without_overlap():
     state = make_state(shots=100)
     ParallelManager._record_result_from_checkpoint(
@@ -118,6 +141,24 @@ def test_worker_stays_sticky_until_job_completion():
     complete(state, lease)
     worker.busy = False
     worker.current_lease = None
+    manager._dispatch_worker(worker, queue, states, workers, controllers)
+    assert isinstance(queue.messages[-1], LoadJob)
+    assert worker.job_id == "b"
+
+
+def test_idle_worker_gets_other_job_when_first_job_is_fully_leased():
+    from hex_qec.parallel.types import LoadJob
+
+    first = make_state("a", 2)
+    assert ParallelManager._allocate_lease(first, 1) is not None
+    assert ParallelManager._allocate_lease(first, 1) is not None
+    states = {"a": first, "b": make_state("b", 2)}
+    worker = WorkerState(2, ready=True)
+    workers = {0: WorkerState(0, job_id="a"), 1: WorkerState(1, job_id="a"), 2: worker}
+    queue = RecordingQueue()
+    controllers = {}
+    manager = ParallelManager(ParallelExecutionOptions(num_workers=1))
+
     manager._dispatch_worker(worker, queue, states, workers, controllers)
     assert isinstance(queue.messages[-1], LoadJob)
     assert worker.job_id == "b"

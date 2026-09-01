@@ -1066,3 +1066,32 @@ No adaptive simulator or core-code refactor was implemented or tested.
 
     Outcome: PASS. Compilation and whitespace validation passed; the complete
     suite passed 134 tests with 8 existing dependency deprecation warnings.
+
+## Fully-leased scheduler regression fix
+
+132. `PYTHONPATH=src pytest -q tests/test_parallel_chunking.py`.
+
+    Outcome: PASS, 18 tests, including fully-leased job eligibility and
+    multi-job fairness.
+
+133. `PYTHONPATH=src pytest -q tests/test_parallel_workers.py`.
+
+    Outcome: PASS, 11 tests, including 8-workers/2-shot no-loop, 8-workers/
+    3-shot no-gap, and prepared-state reuse.
+
+134. `PYTHONPATH=src pytest -q tests/test_parallel_checkpoint.py`.
+
+    Outcome: PASS, 5 tests. Checkpoint behavior remains unchanged.
+
+135. `PYTHONPATH=src pytest -q tests/test_parallel_adaptive.py`.
+
+    Outcome: PASS, 6 tests. Adaptive executor and QEC semantics remain
+    unchanged.
+
+136. `PYTHONPATH=src pytest -q`.
+
+    Outcome: PASS, 139 tests with 8 existing dependency deprecation warnings.
+
+137. `PYTHONPATH=src python -m compileall -q src tests && git diff --check`.
+
+    Outcome: PASS.

@@ -168,13 +168,28 @@ class ParallelManager:
         for worker in workers.values():
             if worker.job_id is not None and not worker.stopping:
                 active_counts[worker.job_id] = active_counts.get(worker.job_id, 0) + 1
-        candidates = [state for state in states.values() if not state.complete]
+        candidates = [
+            state
+            for state in states.values()
+            if not state.complete and ParallelManager._has_unassigned_work(state)
+        ]
         if not candidates:
             return None
         return min(
             candidates,
             key=lambda state: (active_counts.get(state.spec.job_id, 0), state.spec.job_id),
         )
+
+    @staticmethod
+    def _has_unassigned_work(state: JobState) -> bool:
+        """Whether a job has a shot not covered by completed or active ranges."""
+
+        covered = [*state.completed_ranges]
+        covered.extend(
+            (lease.shot_start, lease.end)
+            for lease in state.active_leases.values()
+        )
+        return first_missing_index(covered, state.spec.max_shots) is not None
 
     @staticmethod
     def _allocate_lease(
@@ -397,6 +412,9 @@ class ParallelManager:
                     if worker.job_id is not None:
                         controllers[(worker.worker_id, worker.job_id)].observe(message.runtime_seconds)
                     self._dispatch_worker(worker, input_queues[worker.worker_id], states, workers, controllers)
+                    self._dispatch_idle_workers(
+                        states, workers, input_queues, controllers
+                    )
                     now = time.monotonic()
                     if self.options.verbose >= 2:
                         print(
@@ -442,8 +460,13 @@ class ParallelManager:
         if worker.job_id is None or states[worker.job_id].complete:
             state = self._select_job(states, workers)
             if state is None:
-                worker.stopping = True
-                input_queue.put(StopWorker())
+                # No eligible job can mean either that all jobs are done or
+                # that every remaining shot is already in flight.  In the
+                # latter case this worker must remain idle and retain any
+                # prepared association until a result changes the state.
+                if all(item.complete for item in states.values()):
+                    worker.stopping = True
+                    input_queue.put(StopWorker())
                 return
             worker.job_id = state.spec.job_id
             controller = controllers.setdefault(
@@ -465,12 +488,32 @@ class ParallelManager:
         controller = controllers[(worker.worker_id, worker.job_id)]
         lease = self._allocate_lease(state, controller.next_size(state.spec.max_shots))
         if lease is None:
-            worker.job_id = None
-            self._dispatch_worker(worker, input_queue, states, workers, controllers)
+            # The job is incomplete but fully leased.  Keep the worker's
+            # association and prepared state; a later chunk result will
+            # retry dispatch for all idle workers.
             return
         worker.current_lease = lease
         worker.busy = True
         input_queue.put(RunLease(lease, state.spec.seed_base))
+
+    def _dispatch_idle_workers(
+        self,
+        states: dict[str, JobState],
+        workers: dict[int, WorkerState],
+        input_queues,
+        controllers: dict[tuple[int, str], ChunkSizeController],
+    ) -> None:
+        """Retry only idle workers after a lease changes job availability."""
+
+        for idle_worker in workers.values():
+            if idle_worker.ready and not idle_worker.busy and not idle_worker.loading:
+                self._dispatch_worker(
+                    idle_worker,
+                    input_queues[idle_worker.worker_id],
+                    states,
+                    workers,
+                    controllers,
+                )
 
     @staticmethod
     def _shutdown(processes, input_queues, *, terminate: bool) -> None:
