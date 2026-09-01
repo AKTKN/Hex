@@ -988,3 +988,33 @@ No adaptive simulator or core-code refactor was implemented or tested.
     intentionally underpowered no-margin result was classified as
     `statistically_inconclusive`. Independent smoke reports were written
     under `diagnostics/results/forced_long_consistency/`.
+
+## Diagnostic noisy-criterion repair
+
+120. `PYTHONPATH=src pytest -q tests/test_forced_long_consistency_diagnostic.py`
+
+    Outcome: PASS, 14 tests with the existing eight dependency deprecation
+    warnings. Added regression coverage for nonzero logical errors with
+    passing final detector validation, detector-validation failure, nested
+    Markdown rendering, and point-level structural status.
+
+121. `PYTHONPATH=src pytest -q`
+
+    Outcome: PASS, 99 tests with the existing eight dependency deprecation
+    warnings.
+
+122. `PYTHONPATH=src python -m diagnostics.forced_long_consistency --smoke
+     --output-dir /tmp/hex-forced-long-p0-fix --overwrite`
+
+    Outcome: PASS. Structural checks passed and the result was
+    `statistically_inconclusive` for the intentionally underpowered,
+    no-margin p=0 smoke.
+
+123. `PYTHONPATH=src python -m diagnostics.forced_long_consistency
+     --distances 3 --physical-errors 0.005 --shots 256 --batch-size 256
+     --output-dir /tmp/hex-forced-long-noisy-fix --overwrite`
+
+    Outcome: PASS. Structural checks passed at nonzero noise even though the
+    B/C structural probes observed 5 and 6 logical errors. The report
+    contained 3 base workflow rows and 3 pairwise comparison rows; the result
+    was `statistically_inconclusive` without an equivalence margin.

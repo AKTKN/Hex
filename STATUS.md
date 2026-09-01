@@ -543,6 +543,29 @@ p=0 shots. The smoke classification was `statistically_inconclusive`, as no
 equivalence margin was supplied and the run was intentionally underpowered.
 No production source file or existing validation file was modified.
 
+## Diagnostic noisy-criterion repair
+
+Date: 2026-09-01
+
+Repaired the independent diagnostic's false structural failures at nonzero
+physical error. Structural success now depends on deterministic checks and
+successful completion of the executor's final detector/software-frame
+validation, represented explicitly by `final_software_frame.B.passed` and
+`.C.passed`. Observed logical-error counts remain metadata only; this branch
+does not impose an additional p=0 logical-error requirement.
+
+Nested Markdown results now render explicit booleans for permutation,
+reference-cache, final software-frame, and point-level `all_passed`, with
+failure details and parameter points included in structural diagnosis
+evidence.
+
+Focused tests passed (14), full pytest passed (99), the p=0 smoke passed, and
+a small real d=3, p=0.005, 256-shot run passed structural checks despite
+observing 5 B and 6 C probe logical errors. That noisy run produced all 3
+base workflow rows and all 3 pairwise rows, confirming Monte Carlo proceeds
+after genuine structural success. No production source or validation file was
+modified.
+
 ## Open issue / next action
 
 The remaining measured cost is downstream Knill processing and decoder work;

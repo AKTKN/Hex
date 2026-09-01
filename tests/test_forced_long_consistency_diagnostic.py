@@ -18,8 +18,11 @@ from diagnostics.forced_long_consistency import (
     check_permutation,
     classify_diagnostic,
     compare_physical_instructions,
+    format_structural_check_result,
     json_safe,
     pairwise_statistics,
+    structural_all_passed,
+    _report_markdown,
     stripped_detector_circuit,
     _check_cache,
     _check_decoder_endpoints,
@@ -103,6 +106,76 @@ def test_statistical_classification_logic():
     assert classify_diagnostic(False, _synthetic_rows(["equivalent_within_margin", "difference_detected", "difference_detected"]), margin_supplied=True)["classification"] == "adaptive_split_path_suspect"
     assert classify_diagnostic(False, _synthetic_rows(["difference_detected", "equivalent_within_margin", "difference_detected"]), margin_supplied=True)["classification"] == "stateful_executor_suspect"
     assert classify_diagnostic(False, _synthetic_rows(["inconclusive"] * 3), margin_supplied=True)["classification"] == "statistically_inconclusive"
+
+
+def _structural_fixture(final_frame):
+    return {
+        "state_prep_circuit_equality": {"equal": True},
+        "short_extra_physical_equality": {"equal": True},
+        "full_contiguous_circuit_equality": {"exact_equal": True},
+        "decoder_endpoint_equality": {"equal": True},
+        "correction_map_equality": {"equal": True},
+        "measurement_permutation": {
+            "bijective": True,
+            "expected_order_equal": True,
+            "round_trip_equal": True,
+            "duplicates": 0,
+            "missing": [],
+        },
+        "permuted_correction_propagation": {"equal": True},
+        "reference_cache_consistency": {
+            "B": {"equal": True, "failures": []},
+            "C": {"equal": True, "failures": []},
+        },
+        "final_software_frame": final_frame,
+    }
+
+
+def test_noisy_logical_errors_do_not_fail_structural_pass():
+    final_frame = {
+        "B": {"passed": True, "shots": 256, "logical_errors": 3, "error": None},
+        "C": {"passed": True, "shots": 256, "logical_errors": 5, "error": None},
+        "equal": True,
+    }
+    checks = _structural_fixture(final_frame)
+    assert format_structural_check_result("final_software_frame", final_frame)[0]
+    assert structural_all_passed(checks)
+
+
+def test_detector_validation_failure_is_structural_failure_with_evidence():
+    final_frame = {
+        "B": {"passed": False, "shots": 256, "logical_errors": None, "error": "adaptive software corrections left detector flips"},
+        "C": {"passed": True, "shots": 256, "logical_errors": 5, "error": None},
+        "equal": False,
+    }
+    checks = _structural_fixture(final_frame)
+    assert not structural_all_passed(checks)
+    diagnosis = classify_diagnostic(
+        True,
+        [],
+        margin_supplied=True,
+        structural_checks=[{"distance": 3, "physical_error": 0.005, "checks": checks}],
+    )
+    assert diagnosis["classification"] == "structural_mismatch_detected"
+    assert "final_software_frame" in diagnosis["evidence"][0]
+
+
+def test_nested_structural_results_and_point_all_passed_render_explicitly():
+    checks = _structural_fixture({
+        "B": {"passed": True, "shots": 4, "logical_errors": 1, "error": None},
+        "C": {"passed": True, "shots": 4, "logical_errors": 2, "error": None},
+        "equal": True,
+    })
+    markdown = _report_markdown({
+        "diagnosis": {"classification": "statistically_inconclusive", "evidence": ["test"], "recommended_next_action": "test"},
+        "structural_checks": [{"distance": 3, "physical_error": 0.005, "checks": {**checks, "all_passed": True}}],
+        "monte_carlo": {"base": [], "extended": [], "pooled": []},
+        "pairwise_statistics": [],
+    })
+    assert "| 3 | 0.005 | True |" in markdown
+    assert "| measurement_permutation | 3 | 0.005 | True |" in markdown
+    assert "| reference_cache_consistency | 3 | 0.005 | True |" in markdown
+    assert "| final_software_frame | 3 | 0.005 | True |" in markdown
 
 
 def test_json_serialization_has_no_nan_or_infinity():

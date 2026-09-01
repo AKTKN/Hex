@@ -267,11 +267,27 @@ def classify_diagnostic(
     pair_rows: Sequence[dict[str, Any]],
     *,
     margin_supplied: bool,
+    structural_checks: Sequence[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if structural_failure:
+        failures = []
+        for point in structural_checks or ():
+            checks = point.get("checks", point)
+            for name, value in checks.items():
+                if name == "all_passed":
+                    continue
+                passed, _ = format_structural_check_result(name, value)
+                if not passed:
+                    failures.append(
+                        f"d={point.get('distance', '?')}, p={point.get('physical_error', '?')}: {name}"
+                    )
         return {
             "classification": "structural_mismatch_detected",
-            "evidence": ["At least one deterministic structural check failed."],
+            "evidence": [
+                "Failed structural checks: " + "; ".join(failures)
+                if failures
+                else "At least one deterministic structural check failed."
+            ],
             "recommended_next_action": "Inspect the saved structural mismatch before collecting more Monte Carlo data.",
         }
     by_pair = {(row["distance"], row["physical_error"], row["pair"]): row for row in pair_rows}
@@ -302,6 +318,74 @@ def classify_diagnostic(
             else "Review the pairwise evidence and saved raw rows before changing production code."
         ),
     }
+
+
+def format_structural_check_result(name: str, value: Any) -> tuple[bool, str]:
+    """Return an explicit pass/fail value and concise diagnostic details."""
+
+    if name in {
+        "state_prep_circuit_equality",
+        "short_extra_physical_equality",
+        "decoder_endpoint_equality",
+        "correction_map_equality",
+        "permuted_correction_propagation",
+    }:
+        passed = bool(value.get("equal", False))
+        details = ""
+        if not passed:
+            details = str(value.get("first_difference", value.get("failures", "mismatch")))
+        return passed, details
+    if name == "full_contiguous_circuit_equality":
+        passed = bool(value.get("exact_equal", False))
+        return passed, "" if passed else f"first difference: {value.get('first_difference')}"
+    if name == "measurement_permutation":
+        passed = bool(
+            value.get("bijective", False)
+            and value.get("expected_order_equal", False)
+            and value.get("round_trip_equal", False)
+        )
+        details = ""
+        if not passed:
+            details = (
+                f"bijective={value.get('bijective')}, "
+                f"expected_order_equal={value.get('expected_order_equal')}, "
+                f"round_trip_equal={value.get('round_trip_equal')}, "
+                f"duplicates={value.get('duplicates', 0)}, "
+                f"missing={value.get('missing', [])}"
+            )
+        return passed, details
+    if name == "reference_cache_consistency":
+        b_passed = bool(value.get("B", {}).get("equal", False))
+        c_passed = bool(value.get("C", {}).get("equal", False))
+        passed = b_passed and c_passed
+        details = "" if passed else f"B failures={len(value.get('B', {}).get('failures', []))}; C failures={len(value.get('C', {}).get('failures', []))}"
+        return passed, details
+    if name == "final_software_frame":
+        b_passed = bool(value.get("B", {}).get("passed", False))
+        c_passed = bool(value.get("C", {}).get("passed", False))
+        passed = b_passed and c_passed
+        details = "" if passed else f"B: {value.get('B', {}).get('error')}; C: {value.get('C', {}).get('error')}"
+        return passed, details
+    if name == "all_passed":
+        return bool(value), ""
+    return bool(value), ""
+
+
+def structural_all_passed(checks: dict[str, Any]) -> bool:
+    """Evaluate only deterministic checks, never noisy logical-error counts."""
+
+    required = (
+        "state_prep_circuit_equality",
+        "short_extra_physical_equality",
+        "full_contiguous_circuit_equality",
+        "decoder_endpoint_equality",
+        "correction_map_equality",
+        "measurement_permutation",
+        "permuted_correction_propagation",
+        "reference_cache_consistency",
+        "final_software_frame",
+    )
+    return all(format_structural_check_result(name, checks[name])[0] for name in required)
 
 
 @dataclass(frozen=True)
@@ -567,6 +651,27 @@ def _check_cache(executor: StatefulAdaptiveKnillExecutor) -> dict[str, Any]:
     return {"equal": not failures, "entries": len(executor._reference_sample_cache._entries), "failures": failures}
 
 
+def _run_final_software_frame_probe(
+    executor: StatefulAdaptiveKnillExecutor,
+    shots: int,
+) -> dict[str, Any]:
+    """Run a probe and distinguish detector-validation failure from other errors."""
+
+    try:
+        result = executor.simulate_result(shots, 10**12)
+    except RuntimeError as error:
+        message = str(error)
+        if "adaptive software corrections left detector flips" not in message:
+            raise
+        return {"passed": False, "shots": shots, "logical_errors": None, "error": message}
+    return {
+        "passed": True,
+        "shots": result.shots,
+        "logical_errors": result.logical_errors,
+        "error": None,
+    }
+
+
 def structural_checks(parity_check_tuple: tuple[Any, ...], config: DiagnosticConfig, distance: int, physical_error: float) -> dict[str, Any]:
     fixed = build_fixed_modules(parity_check_tuple, distance, physical_error, num_teleportations=config.num_teleportations, pauli=config.pauli, surface_code=config.surface_code)
     contiguous = build_fixed_modules(parity_check_tuple, distance, physical_error, num_teleportations=config.num_teleportations, pauli=config.pauli, surface_code=config.surface_code)
@@ -659,12 +764,14 @@ def structural_checks(parity_check_tuple: tuple[Any, ...], config: DiagnosticCon
                 propagation_failures.append({"module_index": module_index, "row": row})
     propagation = {"equal": not propagation_failures, "rows_checked": int(sum(m.shape[0] for m in fixed_maps if m is not None)), "failures": propagation_failures}
 
-    b_executor = StatefulAdaptiveKnillExecutor(contiguous, batch_size=min(config.batch_size, 256), seed=_stable_seed(config.base_seed, "B", distance, physical_error, "structural"))
-    b_result = b_executor.simulate_result(min(config.batch_size, 256), 10**12)
-    c_executor = StatefulAdaptiveKnillExecutor(adaptive, batch_size=min(config.batch_size, 256), seed=_stable_seed(config.base_seed, "C", distance, physical_error, "structural"))
-    c_result = c_executor.simulate_result(min(config.batch_size, 256), 10**12)
+    probe_shots = min(config.batch_size, 256)
+    b_executor = StatefulAdaptiveKnillExecutor(contiguous, batch_size=probe_shots, seed=_stable_seed(config.base_seed, "B", distance, physical_error, "structural"))
+    b_final = _run_final_software_frame_probe(b_executor, probe_shots)
+    c_executor = StatefulAdaptiveKnillExecutor(adaptive, batch_size=probe_shots, seed=_stable_seed(config.base_seed, "C", distance, physical_error, "structural"))
+    c_final = _run_final_software_frame_probe(c_executor, probe_shots)
     cache_check = {"B": _check_cache(b_executor), "C": _check_cache(c_executor)}
-    final_check = {"B": {"shots": b_result.shots, "logical_errors": b_result.logical_errors}, "C": {"shots": c_result.shots, "logical_errors": c_result.logical_errors}}
+    final_check = {"B": b_final, "C": c_final}
+    final_check["equal"] = bool(b_final["passed"] and c_final["passed"])
     checks = {
         "state_prep_circuit_equality": {"equal": all(item["stim_exact_equal"] for item in prep_checks), "bases": prep_checks},
         "short_extra_physical_equality": {"equal": all(item["stim_exact_equal"] and item["exact_equal"] for item in split_checks), "bases": split_checks},
@@ -688,8 +795,7 @@ def structural_checks(parity_check_tuple: tuple[Any, ...], config: DiagnosticCon
         and checks["permuted_correction_propagation"]["equal"]
         and checks["reference_cache_consistency"]["B"]["equal"]
         and checks["reference_cache_consistency"]["C"]["equal"]
-        and final_check["B"]["logical_errors"] == 0
-        and final_check["C"]["logical_errors"] == 0
+        and structural_all_passed(checks)
     )
     return checks
 
@@ -737,13 +843,18 @@ def _count_row(row: dict[str, Any]) -> dict[str, Any]:
 
 def _report_markdown(report: dict[str, Any]) -> str:
     diagnosis = report["diagnosis"]
-    lines = ["# Forced-long consistency diagnostic", "", "## Final diagnosis", "", f"**{diagnosis['classification']}** — {diagnosis['evidence'][0]}", "", "## Structural checks", "", "| check | d | p | result | details |", "|---|---:|---:|---|---|"]
+    lines = ["# Forced-long consistency diagnostic", "", "## Final diagnosis", ""]
+    lines.append(f"**{diagnosis['classification']}** — {' '.join(diagnosis['evidence'])}")
+    lines += ["", "## Structural checks", "", "| d | p | structural all passed |", "|---:|---:|---|"]
+    for item in report["structural_checks"]:
+        lines.append(f"| {item['distance']} | {item['physical_error']} | {str(bool(item['checks'].get('all_passed', False)))} |")
+    lines += ["", "| check | d | p | result | details |", "|---|---:|---:|---|---|"]
     for item in report["structural_checks"]:
         for name, value in item["checks"].items():
             if name == "all_passed":
                 continue
-            result = value.get("equal", value.get("exact_equal", value.get("all_passed", ""))) if isinstance(value, dict) else value
-            lines.append(f"| {name} | {item['distance']} | {item['physical_error']} | {result} |  |")
+            result, details = format_structural_check_result(name, value)
+            lines.append(f"| {name} | {item['distance']} | {item['physical_error']} | {str(result)} | {details} |")
     lines += ["", "## Base Monte Carlo", "", "| d | p | workflow | errors/shots | LER | 95% CI |", "|---:|---:|---|---:|---:|---|"]
     for row in report["monte_carlo"]["base"]:
         errors, shots = int(row["logical_errors"]), int(row["shots"])
@@ -771,7 +882,7 @@ def run_diagnostic(config: DiagnosticConfig) -> dict[str, Any]:
     structural_failure = any(not item["checks"]["all_passed"] for item in structural)
     if structural_failure and not config.continue_after_structural_failure:
         raw_rows = _read_rows(raw_path)
-        report = {"schema_version": 1, "diagnostic": "forced_long_consistency", "git_sha": git_sha, "configuration": json_safe(asdict(config)), "structural_checks": structural, "monte_carlo": {"base": [], "extended": [], "pooled": []}, "pairwise_statistics": [], "diagnosis": classify_diagnostic(True, [], margin_supplied=config.equivalence_margin is not None)}
+        report = {"schema_version": 1, "diagnostic": "forced_long_consistency", "git_sha": git_sha, "configuration": json_safe(asdict(config)), "structural_checks": structural, "monte_carlo": {"base": [], "extended": [], "pooled": []}, "pairwise_statistics": [], "diagnosis": classify_diagnostic(True, [], margin_supplied=config.equivalence_margin is not None, structural_checks=structural)}
         _write_reports(config.output_dir, report)
         return report
     for distance in config.distances:
@@ -814,7 +925,7 @@ def run_diagnostic(config: DiagnosticConfig) -> dict[str, Any]:
     else:
         pooled_rows = [{**row, "stage": "pooled"} for row in base_rows]
     stats = pairwise_statistics(pooled_rows, config) if not structural_failure or config.continue_after_structural_failure else []
-    report = {"schema_version": 1, "diagnostic": "forced_long_consistency", "git_sha": git_sha, "configuration": json_safe(asdict(config)), "structural_checks": structural, "monte_carlo": {"base": base_rows, "extended": extended_rows, "pooled": pooled_rows}, "pairwise_statistics": stats, "diagnosis": classify_diagnostic(structural_failure, stats, margin_supplied=config.equivalence_margin is not None)}
+    report = {"schema_version": 1, "diagnostic": "forced_long_consistency", "git_sha": git_sha, "configuration": json_safe(asdict(config)), "structural_checks": structural, "monte_carlo": {"base": base_rows, "extended": extended_rows, "pooled": pooled_rows}, "pairwise_statistics": stats, "diagnosis": classify_diagnostic(structural_failure, stats, margin_supplied=config.equivalence_margin is not None, structural_checks=structural)}
     _write_reports(config.output_dir, report)
     return report
 
