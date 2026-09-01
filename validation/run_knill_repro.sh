@@ -13,11 +13,13 @@ fi
 # Production validation parameters. Extra arguments can still override these
 # values, or select --smoke for a small local check.
 VALIDATION_ARGS=(
-    --distances 3 5
+    --distances 3 5 7
     --physical-errors 0.002 0.003 0.005
-    --shots 25600
-    --replicates 3
-    --verbose
+    --shots 51200
+    --replicates 3 
+    --verbose 
+    --num-workers 8 
+    --parallel-verbose 1
 )
 
 # Resolve the output directory once so analysis and plotting consume the same
