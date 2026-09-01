@@ -9,6 +9,7 @@ import queue
 import time
 import traceback as traceback_module
 import warnings
+from dataclasses import replace
 from typing import Callable, Iterable, Sequence
 
 from .checkpoint import CheckpointError, CheckpointStore
@@ -85,6 +86,15 @@ def _parallel_worker_main(worker_id: int, input_queue, output_queue, cpu_ids) ->
                 )
                 if not isinstance(result, ChunkResult):
                     raise TypeError("run_chunk must return a ChunkResult")
+                if (
+                    result.job_id != message.lease.job_id
+                    or result.shot_start != message.lease.shot_start
+                    or result.shots != message.lease.shot_count
+                ):
+                    raise ValueError("run_chunk result does not match its shot lease")
+                # The compact PreparedParallelJob protocol intentionally
+                # does not carry lease IDs.  The worker owns that binding.
+                result = replace(result, lease_id=message.lease.lease_id)
                 output_queue.put(result)
                 current_lease_id = None
             else:
@@ -279,6 +289,17 @@ class ParallelManager:
                 f"{eta:>8s} {row.job_id}"
             )
 
+    @staticmethod
+    def _report_native_threads() -> None:
+        values = {
+            name: os.environ[name]
+            for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")
+            if name in os.environ
+        }
+        large = {name: value for name, value in values.items() if value.isdigit() and int(value) > 1}
+        if large:
+            print("native thread settings (consider one thread per worker): " + repr(large))
+
     def run(self, jobs: Iterable[ParallelJobSpec]) -> ParallelRunResult:
         specs = list(jobs)
         if len({spec.job_id for spec in specs}) != len(specs):
@@ -293,6 +314,9 @@ class ParallelManager:
             self._record_result_from_checkpoint(state, result)
         if not specs or all(state.complete for state in states.values()):
             return self._result(states, "none")
+
+        if self.options.verbose >= 1:
+            self._report_native_threads()
 
         worker_count = self._resolve_worker_count(len(specs))
         context = mp.get_context(self.options.multiprocessing_start_method)

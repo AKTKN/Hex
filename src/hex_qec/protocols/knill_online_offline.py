@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import stim
 import pymatching
 from ldpc import BpDecoder, BpOsdDecoder
@@ -139,27 +141,22 @@ def knill_online_offline(
     return samples_performed, logical_errors
 
 
-def knill_online_offline_adaptive(
+def _build_knill_online_offline_adaptive_executor(
         parity_check_tuple,
         adaptive_schedule: AdaptiveSERounds,
         online_decoder_generator,
         offline_decoder_generator,
         matchable_offline_decoding,
         physical_error,
-        max_shots,
-        max_errors_before_halting,
         pauli,
         num_teleportations,
-        results_path="",
         confidence_aggregator=None,
-        detail_level="summary",
         batch_size=256,
         seed=None,
         surface_code: bool = False,
         profiler=None,
-        warmup_shots: int = 0,
 ):
-    """Run Knill with two-level adaptive state preparation.
+    """Build the shared adaptive Knill executor used by serial and parallel paths.
 
     The legacy ``knill_online_offline`` function remains the static compiled
     backend.  This separate entry point uses the stateful reference executor
@@ -300,21 +297,108 @@ def knill_online_offline_adaptive(
             batch_size=batch_size,
             seed=seed,
         )
-    if profiler is not None and warmup_shots:
-        executor.simulate_result(
-            max_shots=warmup_shots,
+    return executor
+
+
+def knill_online_offline_adaptive(
+        parity_check_tuple,
+        adaptive_schedule: AdaptiveSERounds,
+        online_decoder_generator,
+        offline_decoder_generator,
+        matchable_offline_decoding,
+        physical_error,
+        max_shots,
+        max_errors_before_halting,
+        pauli,
+        num_teleportations,
+        results_path="",
+        confidence_aggregator=None,
+        detail_level="summary",
+        batch_size=256,
+        seed=None,
+        surface_code: bool = False,
+        profiler=None,
+        warmup_shots: int = 0,
+        parallel_options=None,
+):
+    """Run Knill with two-level adaptive state preparation.
+
+    ``parallel_options=None`` preserves the established serial adaptive
+    executor path.  Parallel execution is an opt-in summary-only adapter;
+    workers build and retain their own executor and return additive counts.
+    """
+    if parallel_options is not None:
+        if profiler is not None:
+            raise ValueError(
+                "parallel adaptive execution does not support profiler aggregation"
+            )
+        if detail_level != "summary":
+            raise NotImplementedError(
+                "parallel adaptive execution currently supports detail_level='summary' only"
+            )
+        if warmup_shots:
+            raise ValueError("warmup_shots is unsupported in parallel adaptive execution")
+        from .parallel_adapters import (
+            AdaptiveKnillParallelJobFactory,
+            merge_adaptive_parallel_result,
+        )
+        from hex_qec.parallel import ParallelJobSpec, ParallelManager
+
+        factory = AdaptiveKnillParallelJobFactory(
+            parity_check_tuple=parity_check_tuple,
+            adaptive_schedule=adaptive_schedule,
+            online_decoder_generator=online_decoder_generator,
+            offline_decoder_generator=offline_decoder_generator,
+            matchable_offline_decoding=matchable_offline_decoding,
+            physical_error=physical_error,
+            pauli=pauli,
+            num_teleportations=num_teleportations,
+            confidence_aggregator=confidence_aggregator,
+            surface_code=surface_code,
+        )
+        metadata = factory.metadata(seed=seed)
+        spec = ParallelJobSpec(
+            job_id=factory.job_id_for(seed),
+            factory=factory,
+            max_shots=max_shots,
+            max_errors=max_errors_before_halting,
+            seed_base=seed,
+            metadata=metadata,
+            config_fingerprint=factory.config_fingerprint_for(seed),
+        )
+        parallel_result = ParallelManager(parallel_options).run([spec])
+        result = merge_adaptive_parallel_result(parallel_result, spec)
+    else:
+        executor = _build_knill_online_offline_adaptive_executor(
+            parity_check_tuple,
+            adaptive_schedule,
+            online_decoder_generator,
+            offline_decoder_generator,
+            matchable_offline_decoding,
+            physical_error,
+            pauli,
+            num_teleportations,
+            confidence_aggregator=confidence_aggregator,
+            batch_size=batch_size,
+            seed=seed,
+            surface_code=surface_code,
+            profiler=profiler,
+        )
+        if profiler is not None and warmup_shots:
+            executor.simulate_result(
+                max_shots=warmup_shots,
+                max_errors_before_halting=max_errors_before_halting,
+                detail_level=detail_level,
+                profiler=profiler,
+                profile_phase="warmup",
+            )
+        result = executor.simulate_result(
+            max_shots=max_shots,
             max_errors_before_halting=max_errors_before_halting,
             detail_level=detail_level,
             profiler=profiler,
-            profile_phase="warmup",
+            profile_phase="measured",
         )
-    result = executor.simulate_result(
-        max_shots=max_shots,
-        max_errors_before_halting=max_errors_before_halting,
-        detail_level=detail_level,
-        profiler=profiler,
-        profile_phase="measured",
-    )
     if results_path:
         with open(results_path, "w") as result_file:
             json.dump({

@@ -174,6 +174,16 @@ knill_online_offline_adaptive
  -> SimulationResult
 ```
 
+The adaptive entry point also accepts `parallel_options=None` by default. A
+non-`None` `ParallelExecutionOptions` value routes one configuration through
+the generic spawn manager and a worker-local
+`AdaptiveKnillParallelJobFactory`. Parallel workers retain one prepared
+`StatefulAdaptiveKnillExecutor` for all of their assigned chunks, use global
+shot-index seed ranges, and return summary-only additive counts. The parent
+reconstructs state-preparation and Bell-pair count fields and is the only
+process that writes `results_path`. Analysis/debug detail and profiler
+aggregation remain serial-only.
+
 ## Current limitations
 
 - The legacy API is fixed-round and positional. A separate

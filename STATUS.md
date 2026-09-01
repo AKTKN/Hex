@@ -518,6 +518,39 @@ measurement/reference/correction processing is 5.17%. Accounted time is
 logical errors and all relevant regression tests passed. No further
 optimization was implemented.
 
+## Optional parallel adaptive simulation
+
+Date: 2026-09-01
+
+Implementation branch: `hex-parallel`, based on `hex-adaptive` commit
+`5de58f2f80791054411ad3c0885a4fe3671ed56a`.
+
+Added the QEC-independent `hex_qec.parallel` package with validated options,
+global shot leases, interval reconstruction, sticky scheduling, dynamic
+wall-time chunk sizing, spawn workers, manager-owned JSONL checkpoints,
+progress snapshots, CPU affinity handling, and parent-side worker error
+propagation. Workers prepare one factory result per worker/job and reuse it
+across chunks. Explicit seeds use `(seed_base + global_shot_index) % 2**64`.
+
+Added `protocols/parallel_adapters.py` and extracted the shared adaptive Knill
+executor builder. The optional `parallel_options` hook is summary-only and
+preserves the serial adaptive path when omitted. The adapter temporarily
+sets executor seed and batch size per lease, verifies exact shot count, and
+restores both fields while retaining executor caches. Parent reduction merges
+only additive state-preparation and Bell-pair sufficient counts.
+
+Phase gates completed: pure scheduler/chunking (15 tests), fake spawn workers
+(9 tests), checkpoint/resume (5 tests), exact executor chunk seed behavior and
+real adaptive chunk partitioning (6 focused adaptive tests), and worker-count
+invariance for 1/2/4 workers. The full suite passes with 134 tests and 8
+existing dependency deprecation warnings.
+
+Current limitations are summary-only parallel adaptive results, no parallel
+profiler merge, no legacy static parallel adapter, no detailed per-shot merge,
+no work stealing/distributed execution, and no support for non-pickleable
+decoder-generator closures in multiprocessing. Validation and diagnostics
+were not migrated.
+
 ## Independent forced-long consistency diagnostic
 
 Date: 2026-09-01

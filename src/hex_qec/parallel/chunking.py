@@ -37,6 +37,11 @@ class ChunkSizeController:
         return min(self.current_shots, remaining)
 
 
+# Short compatibility name for callers that treat the controller as a
+# scheduling primitive rather than a size-specific implementation detail.
+ChunkController = ChunkSizeController
+
+
 def merge_intervals(
     intervals: list[tuple[int, int]], new_interval: tuple[int, int]
 ) -> list[tuple[int, int]]:
@@ -73,4 +78,3 @@ def first_missing_index(
         if cursor >= limit:
             return None
     return cursor if cursor < limit else None
-

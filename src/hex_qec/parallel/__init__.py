@@ -1,6 +1,7 @@
 """Optional generic local-process execution for simulation shots."""
 
-from .chunking import ChunkSizeController, first_missing_index, merge_intervals
+from .chunking import ChunkController, ChunkSizeController, first_missing_index, merge_intervals
+from .checkpoint import CheckpointError, CheckpointStore
 from .manager import ParallelManager, ParallelWorkerError, run_parallel
 from .types import (
     ChunkResult,
@@ -19,7 +20,10 @@ from .types import (
 
 __all__ = [
     "ChunkResult",
+    "ChunkController",
     "ChunkSizeController",
+    "CheckpointError",
+    "CheckpointStore",
     "JobProgressSnapshot",
     "JobState",
     "ParallelExecutionOptions",

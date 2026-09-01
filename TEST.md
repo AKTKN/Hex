@@ -1018,3 +1018,51 @@ No adaptive simulator or core-code refactor was implemented or tested.
     B/C structural probes observed 5 and 6 logical errors. The report
     contained 3 base workflow rows and 3 pairwise comparison rows; the result
     was `statistically_inconclusive` without an equivalence margin.
+
+## Optional parallel simulation implementation
+
+124. `PYTHONPATH=src pytest -q tests/test_parallel_chunking.py`.
+
+    The first run exposed an incorrect sticky-test fixture (14 passed, 1
+    failed); after correcting the fixture, the focused Phase 1 gate passed
+    with 15 tests.
+
+125. `PYTHONPATH=src pytest -q tests/test_parallel_workers.py`.
+
+    Outcome: PASS, 9 spawn-worker tests. This covered 1/2/4 workers, global
+    range coverage, prepared-state reuse, sticky job changes, child errors,
+    silent/status output, and pre-start pickleability rejection.
+
+126. `PYTHONPATH=src pytest -q tests/test_parallel_checkpoint.py`.
+
+    Outcome: PASS, 5 checkpoint/resume tests. This covered out-of-order
+    ranges, exact duplicate de-duplication, mismatch, malformed input, and
+    conflicting duplicate rejection.
+
+127. `PYTHONPATH=src pytest -q tests/test_parallel_adaptive.py`.
+
+    Outcome: PASS, 3 tests for executor seed-range mapping/restoration and
+    real adaptive chunk partition invariance.
+
+128. The first four-test worker-count extension run found a state-preparation
+    reduction-key mismatch (3 passed, 1 failed). After inspecting the shared
+    builder's `[0]` event suffix and correcting the parent key reconstruction,
+    the targeted worker-count test passed, followed by the full focused file:
+    4 passed.
+
+129. `PYTHONPATH=src pytest -q tests/test_phase4_adaptive_state_prep.py
+     tests/test_phase5_confidence_adaptive.py tests/test_shared_correction_map_cache.py
+     tests/test_knill_repro_analysis.py`.
+
+    Outcome: PASS, 48 existing adaptive compatibility tests.
+
+130. `PYTHONPATH=src pytest -q tests/test_parallel_adaptive.py` after adding
+     checkpoint and public-hook guard coverage.
+
+    Outcome: PASS, 6 tests.
+
+131. `git diff --check && PYTHONPATH=src python -m compileall -q src tests
+     examples && PYTHONPATH=src pytest -q`.
+
+    Outcome: PASS. Compilation and whitespace validation passed; the complete
+    suite passed 134 tests with 8 existing dependency deprecation warnings.

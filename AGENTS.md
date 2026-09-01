@@ -580,3 +580,14 @@ environment, so source-level smoke tests use `PYTHONPATH=src`.  The checked-in
 package requires `stimbposd`, which was initially absent from that environment
 and was installed for baseline testing; the observed installed versions are
 Stim 1.15.0, PyMatching 2.3.1, stimbposd 0.2.0, and ldpc 2.1.2.
+
+## Optional parallel simulation package
+
+`src/hex_qec/parallel/` contains the generic spawn-based manager, persistent
+workers, leases, chunk controller, checkpoint store, and aggregate result
+types. It remains independent of QEC-specific imports. Adaptive Knill
+construction is adapted in `protocols/parallel_adapters.py`; the public
+adaptive function uses this path only when `parallel_options` is non-`None`.
+The default `parallel_options=None` path remains the existing serial adaptive
+executor. Parallel adaptive results are summary-only, and factories must be
+pickleable under `spawn`.
