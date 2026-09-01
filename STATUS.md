@@ -29,9 +29,10 @@ Current implementation includes the parallel adaptive execution commits
   a future component for calibrated code-capacity confidence and post-selection;
   it was not removed from the internal implementation.
 
-## Short-round rule update (2026-09-01)
+## Direct round-list configuration update (2026-09-01)
 
-- The benchmarking notebook now defines `SHORT_ROUNDS_RULE = "d/2"`.
+- The benchmarking notebook now defines `SHORT_ROUNDS = ["d/2"]` and
+  `LONG_ROUNDS = ["d"]` directly.
 - `short_rounds_for(distance)` applies floor division, so distance 3 gives 1
   short round and distance 5 gives 2 short rounds.
 - Serial and parallel adaptive sweeps, metadata, and the runtime estimate use
@@ -39,6 +40,14 @@ Current implementation includes the parallel adaptive execution commits
 - Ratio rules such as `"d/3"` and `"d/4"` are supported with floor
   division, and integer rules such as `3` and `4` remain supported. Resolved
   values below 2 emit a `RuntimeWarning`; values below 1 remain invalid.
+
+## Fixed-round distance rule update (2026-09-01)
+
+- The notebook now defines `FIXED_ROUNDS = ["d"]` for production sweeps, so
+  fixed-round Knill simulations use `rounds=d` for each distance.
+- Smoke mode retains its explicit `[1, 2]` fixed-round coverage.
+- `FIXED_ROUNDS` can directly mix distance-dependent strings (`"d"`,
+  `"d/2"`, including whitespace around `/`) with integers.
 
 ## Completed checkpoints
 
@@ -569,6 +578,26 @@ measurement/reference/correction processing is 5.17%. Accounted time is
 92.75%, with 7.25% explicit other/uninstrumented time. The run produced 0/5
 logical errors and all relevant regression tests passed. No further
 optimization was implemented.
+
+## Sweep plotting module (2026-09-02)
+
+Added `src/hex_qec/plotting.py` and wired the surface-code sweep notebook to
+it. The module creates one fixed Knill LER-vs-physical-error figure per SE
+round count, one adaptive LER-vs-physical-error figure per threshold with
+distance/schedule curves, and one adaptive LER-vs-mean-effective-rounds
+figure per distance with threshold colors. It accepts an optional fixed
+physical error for the last family and writes PNGs when an output directory
+is supplied. Wilson intervals are plotted when present in the result table.
+
+Added focused plotting tests and dedicated notebook cells for the three
+figure families. Existing result CSVs are unchanged.
+
+## Plot color adjustment (2026-09-02)
+
+Replaced the continuous `viridis`/`plasma` palettes with a curated subset of
+`tab10`. The yellow, olive, orange, and pink entries are excluded so curves
+remain readable on the notebook's light background. Existing result figures
+were regenerated with the safer palette.
 
 ## Optional parallel adaptive simulation
 

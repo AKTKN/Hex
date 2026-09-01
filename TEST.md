@@ -1279,3 +1279,84 @@ No adaptive simulator or core-code refactor was implemented or tested.
 
     Outcome: PASS. All 14 cells executed, including the two-worker adaptive
     parallel sweep.
+
+## Fixed-round distance rule (2026-09-01)
+
+152. Direct notebook-helper checks for production `FIXED_ROUNDS=["d"]` and
+    smoke `[1, 2]` behavior, plus notebook JSON/code compilation and
+    `git diff --check`.
+
+    Outcome: PASS. Production distances 3 and 7 resolve to fixed rounds 3
+    and 7; smoke mode preserves rounds 1 and 2.
+
+153. Fresh in-memory notebook smoke execution with `SMOKE_TEST=True` and
+    temporary parallel output/checkpoint paths after the fixed-round rule
+    update.
+
+    Outcome: PASS. All 14 cells executed, including the two-worker adaptive
+    sweep.
+
+## Direct mixed fixed-round specifications (2026-09-01)
+
+154. Direct notebook-helper checks for `FIXED_ROUNDS=[1, "d", "d/2"]`,
+    including floor division and whitespace around the ratio separator.
+
+    Outcome: PASS. Distance 5 resolves to fixed rounds `[1, 5, 2]`.
+
+155. Fresh in-memory notebook smoke execution with `SMOKE_TEST=True` and
+    temporary parallel output/checkpoint paths after switching fixed-round
+    configuration to a direct list.
+
+    Outcome: PASS. All 14 cells executed, including the two-worker adaptive
+    sweep.
+
+## Removal of round-rule variables (2026-09-01)
+
+156. Direct notebook-helper checks after removing all `*_RULE` variables.
+
+    Outcome: PASS. The direct lists `FIXED_ROUNDS`, `SHORT_ROUNDS`, and
+    `LONG_ROUNDS` support integer and distance-dependent entries such as
+    `"d"` and `"d/2"`.
+
+157. Fresh in-memory notebook smoke execution with `SMOKE_TEST=True` and
+    temporary parallel output/checkpoint paths after removing the rule
+    variables.
+
+    Outcome: PASS. All 14 cells executed, including the two-worker adaptive
+    sweep.
+
+## Result plotting module (2026-09-02)
+
+158. `PYTHONPATH=src pytest -q tests/test_plotting.py`
+
+    Outcome: PASS. 3 plotting tests passed with 8 Matplotlib deprecation
+    warnings.
+
+159. `PYTHONPATH=src python -m compileall -q src tests`
+
+    Outcome: PASS.
+
+160. Checked-in fixed/adaptive CSV plotting smoke using all requested figure
+    families and a temporary output directory.
+
+    Outcome: PASS. Generated 5 fixed-round/distance-filtered figures, 2
+    threshold figures, and 3 fixed-error distance figures.
+
+161. Notebook JSON/code-cell compilation for
+    `notebooks/surface_code_knill_fixed_adaptive_sweeps.ipynb`.
+
+    Outcome: PASS. All 18 cells were valid JSON and Python code cells
+    compiled successfully.
+
+## Plot color adjustment (2026-09-02)
+
+162. `PYTHONPATH=src pytest -q tests/test_plotting.py` after changing the
+    plot palettes.
+
+    Outcome: PASS. 3 plotting tests passed; the palette test confirms the
+    excluded yellow/olive tab10 entries are not used.
+
+163. Regenerated the checked-in CSV visualizations under `results/figures/`
+    with the safe tab10 palette.
+
+    Outcome: PASS. 11 figures regenerated.
