@@ -3,8 +3,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import numpy as np
 import pymatching
 import pytest
+import stim
 
 import hex_qec.simulation.adaptive as adaptive_impl
 from hex_qec.circuit_generation import get_parity_check_matrices
@@ -73,6 +75,100 @@ def test_different_logical_paths_use_distinct_cache_entries(monkeypatch):
     assert short_maps[0] is not long_maps[0]
     assert len(cache.keys) == 2
     assert len(generated) == 2
+
+
+def test_physical_path_key_reuses_equivalent_suffix_segments():
+    circuit = stim.Circuit("M 0")
+    first_segment = adaptive_impl._PhysicalSegment(circuit, 1)
+    second_segment = adaptive_impl._PhysicalSegment(circuit, 1)
+    other_segment = adaptive_impl._PhysicalSegment(stim.Circuit("M 0"), 1)
+
+    assert adaptive_impl._physical_path_key((first_segment,)) == (
+        adaptive_impl._physical_path_key((second_segment,))
+    )
+    assert adaptive_impl._physical_path_key((first_segment,)) != (
+        adaptive_impl._physical_path_key((other_segment,))
+    )
+
+
+def test_reference_samples_are_lazy_and_shared_across_executor_shots(monkeypatch):
+    runners = []
+    original_init = adaptive_impl._AdaptiveShotRunner.__init__
+
+    def capture_runner(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        runners.append(self)
+
+    monkeypatch.setattr(
+        adaptive_impl._AdaptiveShotRunner,
+        "__init__",
+        capture_runner,
+    )
+    parity_checks = get_parity_check_matrices("surface", 3)
+    profiler = WallTimeProfiler()
+    result = knill_online_offline_adaptive(
+        parity_checks,
+        AdaptiveSERounds(1, 2, AlwaysLongPolicy()),
+        online_decoder_generator=pymatching.Matching.from_check_matrix,
+        offline_decoder_generator=pymatching.Matching.from_check_matrix,
+        matchable_offline_decoding=True,
+        physical_error=0.0,
+        max_shots=3,
+        max_errors_before_halting=10,
+        pauli="z",
+        num_teleportations=1,
+        batch_size=1,
+        seed=654,
+        surface_code=True,
+        detail_level="analysis",
+        profiler=profiler,
+    )
+
+    assert result.shots == 3
+    assert len(runners) == 3
+    cache = runners[0]._reference_sample_cache
+    assert all(runner._reference_sample_cache is cache for runner in runners)
+    assert cache.miss_count == len(cache.keys)
+    assert cache.hit_count > 0
+    reference_calls = [
+        event
+        for event in profiler.events
+        if event.section == "corrected_measurements.reference_sample"
+    ]
+    assert len(reference_calls) == cache.miss_count
+
+
+def test_reference_sample_cache_preserves_seeded_adaptive_result(monkeypatch):
+    parity_checks = get_parity_check_matrices("surface", 3)
+    common = dict(
+        parity_check_tuple=parity_checks,
+        adaptive_schedule=AdaptiveSERounds(1, 2, AlwaysLongPolicy()),
+        online_decoder_generator=pymatching.Matching.from_check_matrix,
+        offline_decoder_generator=pymatching.Matching.from_check_matrix,
+        matchable_offline_decoding=True,
+        physical_error=0.0,
+        max_shots=2,
+        max_errors_before_halting=10,
+        pauli="z",
+        num_teleportations=1,
+        batch_size=1,
+        seed=987,
+        surface_code=True,
+        detail_level="analysis",
+    )
+
+    cached = knill_online_offline_adaptive(**common)
+
+    def disable_cache(self, key):
+        self.miss_count += 1
+        return None
+
+    monkeypatch.setattr(adaptive_impl._ReferenceSampleCache, "get", disable_cache)
+    uncached = knill_online_offline_adaptive(**common)
+
+    assert cached.logical_errors == uncached.logical_errors
+    for field in ("used_long_pair", "would_extend_zero", "would_extend_plus"):
+        np.testing.assert_array_equal(cached.per_shot[field], uncached.per_shot[field])
 
 
 @pytest.mark.parametrize("pauli", ["z", "x"])

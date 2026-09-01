@@ -506,3 +506,25 @@ reference sampling is 15.56% as an inclusive diagnostic. Do not implement
 reference-sample, decoder, batching, or any other optimization as part of this
 checkpoint. Preserve the original and shared-map profile artifacts for future
 comparisons.
+
+## Lazy reference-sample cache optimization
+
+Date: 2026-09-01
+
+Implemented only executor-lifetime lazy caching of Stim `reference_sample()`
+results. The cache is owned by `StatefulAdaptiveKnillExecutor`, shared by all
+of its `_AdaptiveShotRunner` instances, and keyed by the ordered physical
+Stim circuit path. This includes per-shot continuation wrappers by their
+shared executor-owned suffix circuit identity. Cache misses retain the
+existing circuit assembly and `reference_sample()` call; hits reuse only the
+deterministic reference trajectory. Physical simulator state, measurement
+flips, decoder inputs, and adaptive decisions remain per-shot and unchanged.
+
+Focused and full test suites passed after the change. A small d=3 profile
+(one warm-up and three measured AlwaysLong shots) observed six reference
+sample misses during warm-up and 21 measured cache hits; measured E2E time was
+0.009555058 s/shot. The requested d=5 profile (one warm-up and five measured
+AlwaysLong shots) observed six warm-up misses and 35 measured hits, with
+0.011149359 s/shot measured E2E time. The cache report intentionally keeps
+warm-up calls out of the measured-shot reference-sample total. No unrelated
+optimization was implemented.

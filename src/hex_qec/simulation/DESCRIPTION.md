@@ -130,9 +130,13 @@ state separate from the software correction frame.
   fallback for correction-map generation.
 - It uses the existing 256-shot batch convention by default, but accepts a
   configurable batch size for tests and experiments.
-- `reference_sample()` is computed for the complete concatenated circuit and
-  sliced as prefixes. Stim circuit measurement records are causal, so current
-  detector slices depend only on the prefix already executed.
+- `reference_sample()` is computed lazily for each exact physical path,
+  cached for the lifetime of the `StatefulAdaptiveKnillExecutor`, and reused
+  across its shot runners. It is computed for the complete concatenated path
+  and sliced as prefixes. Stim circuit measurement records are causal, so
+  current detector slices depend only on the prefix already executed. The
+  cache contains only deterministic reference data; shot-specific simulator
+  state and measurement flips remain uncached.
 - `copy(copy_rng=True)` is not needed by the reference adaptive path because
   each shot retains its own simulator. Branch compaction and batch-state
   copying remain future optimizations.

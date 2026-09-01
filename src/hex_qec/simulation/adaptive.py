@@ -307,6 +307,28 @@ def _path_key(units: Sequence[Any]) -> tuple[int, ...]:
     return tuple(id(unit) for unit in units)
 
 
+def _physical_path_key(
+    units: Sequence[Any],
+) -> tuple[tuple[int, int, int], ...]:
+    """Identify an exact physical path by its ordered Stim circuit objects.
+
+    Long continuation segments are created anew for each shot, but they all
+    reference the executor-owned detector-stripped suffix circuit.  Using the
+    underlying circuit identity keeps equivalent physical paths keyed
+    together without enumerating adaptive branches or hashing circuit text on
+    every measurement reconstruction.
+    """
+
+    return tuple(
+        (
+            id(unit.circuit),
+            int(unit.num_measurements),
+            int(getattr(unit, "num_detectors", 0)),
+        )
+        for unit in units
+    )
+
+
 def _noise_free_circuit_for_units(units: Sequence[Any]) -> stim.Circuit:
     circuit = stim.Circuit()
     for unit in units:
@@ -362,6 +384,37 @@ class _CorrectionMapCache:
         return tuple(self._entries)
 
 
+class _ReferenceSampleCache:
+    """Executor-lifetime lazy cache for deterministic physical references."""
+
+    def __init__(self) -> None:
+        self._entries: dict[tuple[tuple[int, int, int], ...], np.ndarray] = {}
+        self.hit_count = 0
+        self.miss_count = 0
+
+    def get(
+        self,
+        key: tuple[tuple[int, int, int], ...],
+    ) -> np.ndarray | None:
+        if key in self._entries:
+            self.hit_count += 1
+            return self._entries[key]
+        self.miss_count += 1
+        return None
+
+    def store(
+        self,
+        key: tuple[tuple[int, int, int], ...],
+        reference_sample: np.ndarray,
+    ) -> np.ndarray:
+        self._entries[key] = reference_sample
+        return reference_sample
+
+    @property
+    def keys(self) -> tuple[tuple[tuple[int, int, int], ...], ...]:
+        return tuple(self._entries)
+
+
 class _AdaptiveShotRunner:
     """Unoptimized one-shot executor used by the adaptive protocol path."""
 
@@ -371,6 +424,7 @@ class _AdaptiveShotRunner:
         seed: int | None,
         profiler: Any = None,
         correction_map_cache: _CorrectionMapCache | None = None,
+        reference_sample_cache: _ReferenceSampleCache | None = None,
         stripped_suffix_cache: Mapping[int, stim.Circuit] | None = None,
     ) -> None:
         self.profiler = profiler
@@ -389,6 +443,11 @@ class _AdaptiveShotRunner:
         # legacy/internal use case.  Protocol-created runners receive the
         # executor-owned cache below and never regenerate prepared paths.
         self._correction_map_cache = correction_map_cache or _CorrectionMapCache()
+        self._reference_sample_cache = (
+            reference_sample_cache
+            if reference_sample_cache is not None
+            else _ReferenceSampleCache()
+        )
         self._stripped_suffix_cache = stripped_suffix_cache
         # logical measurement index -> physical measurement index.  It is
         # normally identity; a long synchronized pair has z-short, x-short,
@@ -451,17 +510,36 @@ class _AdaptiveShotRunner:
         physical_units = self.physical_units if physical_units is None else physical_units
         logical_units = self.units if logical_units is None else logical_units
         with _profile_section(
-            self.profiler, "corrected_measurements.circuit_assembly"
-        ):
-            circuit = self._circuit_for_units(physical_units)
-        with _profile_section(
             self.profiler, "corrected_measurements.get_measurement_flips"
         ):
             flips = self.simulator.get_measurement_flips()
+        physical_path_key = _physical_path_key(physical_units)
         with _profile_section(
-            self.profiler, "corrected_measurements.reference_sample"
+            self.profiler, "corrected_measurements.reference_sample_cache.lookup"
         ):
-            reference_sample = np.asarray(circuit.reference_sample(), dtype=bool)
+            reference_sample = self._reference_sample_cache.get(physical_path_key)
+        if reference_sample is None:
+            with _profile_section(
+                self.profiler, "corrected_measurements.reference_sample_cache.miss"
+            ):
+                with _profile_section(
+                    self.profiler, "corrected_measurements.circuit_assembly"
+                ):
+                    circuit = self._circuit_for_units(physical_units)
+                with _profile_section(
+                    self.profiler, "corrected_measurements.reference_sample"
+                ):
+                    reference_sample = np.asarray(
+                        circuit.reference_sample(), dtype=bool
+                    )
+                self._reference_sample_cache.store(
+                    physical_path_key, reference_sample
+                )
+        else:
+            with _profile_section(
+                self.profiler, "corrected_measurements.reference_sample_cache.hit"
+            ):
+                pass
         with _profile_section(
             self.profiler, "corrected_measurements.reconstruct"
         ):
@@ -1047,6 +1125,7 @@ class StatefulAdaptiveKnillExecutor:
         self.seed = seed
         self.profiler = self._find_profiler(self.modules)
         self._correction_map_cache = _CorrectionMapCache()
+        self._reference_sample_cache = _ReferenceSampleCache()
         self._precompute_correction_maps(self.profiler)
         self._stripped_suffix_cache: dict[int, stim.Circuit] = {}
         self._precompute_stripped_suffixes(self.profiler)
@@ -1236,6 +1315,7 @@ class StatefulAdaptiveKnillExecutor:
                     seed=shot_seed,
                     profiler=profiler,
                     correction_map_cache=self._correction_map_cache,
+                    reference_sample_cache=self._reference_sample_cache,
                     stripped_suffix_cache=self._stripped_suffix_cache,
                 )
                 error, postselection, shot_observations = runner.run(self.modules)

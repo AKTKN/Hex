@@ -877,3 +877,37 @@ No adaptive simulator or core-code refactor was implemented or tested.
     `adaptive_walltime_shared_map_suffix_*` artifacts and
     `adaptive_walltime_optimization_comparison.md`, preserving earlier
     profile outputs.
+
+## Lazy reference-sample cache optimization
+
+112. `PYTHONPATH=src pytest -q tests/test_shared_correction_map_cache.py
+     tests/test_walltime_profiling.py` after adding the executor-lifetime
+     lazy reference-sample cache.
+
+    Outcome: PASS, 13 tests with the existing eight dependency deprecation
+    warnings. This covered physical-path key identity, shared cache ownership
+    across three shot runners, lazy miss/hit behavior, existing correction-map
+    caching, suffix reuse, and profiling semantics.
+
+113. `PYTHONPATH=src pytest -q tests`.
+
+    Outcome: PASS, 78 tests with the existing eight dependency deprecation
+    warnings.
+
+114. `PYTHONPATH=src python -m profiling.adaptive_walltime_profile
+     --distance 3 --physical-error 0.003 --short-rounds 1 --long-rounds 3
+     --num-shots 3 --warmup-shots 1 --seed 1234 --policy always-long`
+     using a temporary output directory.
+
+    Outcome: PASS. The profile completed 3 measured shots with 0 logical
+    errors. It observed 6 reference-sample cache misses during warm-up and 21
+    measured cache hits; measured E2E time was 0.009555058 s/shot.
+
+115. `PYTHONPATH=src python -m profiling.adaptive_walltime_profile
+     --distance 5 --physical-error 0.003 --short-rounds 1 --long-rounds 5
+     --num-shots 5 --warmup-shots 1 --seed 1234 --policy always-long
+     --pauli z` using a temporary output directory.
+
+    Outcome: PASS. The profile completed 5 measured shots with 0 logical
+    errors. It observed 6 reference-sample cache misses during warm-up and 35
+    measured cache hits; measured E2E time was 0.011149359 s/shot.
