@@ -15,6 +15,11 @@ from .adaptive_state_prep import (
     generate_adaptive_state_prep_module,
     generate_adaptive_state_prep_modules,
 )
+from .factory import (
+    BlockSupport, CircuitRegion, CodeSpec, FactoryCodeAdapter, IndexRange,
+    MeasurementLedger, MeasurementRecord, PreparationFrame, PreparationFramePlan,
+    PreparationPlan, RecordParity, SignedCheckFlow, TeleportationStage,
+)
 
 __all__ = [
     "logical_measurement_module",
@@ -32,4 +37,7 @@ __all__ = [
     "AdaptiveStatePrepModule",
     "generate_adaptive_state_prep_module",
     "generate_adaptive_state_prep_modules",
+    "BlockSupport", "CircuitRegion", "CodeSpec", "FactoryCodeAdapter", "IndexRange",
+    "MeasurementLedger", "MeasurementRecord", "PreparationFrame", "PreparationFramePlan",
+    "PreparationPlan", "RecordParity", "SignedCheckFlow", "TeleportationStage",
 ]

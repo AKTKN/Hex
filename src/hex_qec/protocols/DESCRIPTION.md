@@ -1,5 +1,10 @@
 # `protocols`
 
+H1 adds the independent `FactoryCircuitBuilder`/`FactoryCircuitBundle` and
+`RotatedSurfaceCodeAdapter` exports for a single-stage logical-zero primitive;
+see [DOCS.md](DOCS.md#h1-single-stage-factory). The full Knill/Steane paths
+described below are unchanged, including their noisy final readout.
+
 This package contains the fixed-round Knill and Steane builders plus a
 separate stateful two-level adaptive Knill builder. The legacy builders still
 return `(samples_performed, logical_errors)`.

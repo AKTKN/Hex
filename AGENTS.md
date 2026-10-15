@@ -664,3 +664,33 @@ and [TEST.md](TEST.md#auxiliary-system-h0-documentation-baseline).
 - Finish each authorized phase with one scoped commit and a normal push only
   after checks pass. Stage intended source/tests/docs only and report the SHA,
   exact checks, push result, and remaining limitations. Do not advance phases.
+
+## Auxiliary-system H1 checkpoint
+
+H1 was explicitly requested after H0 review on 2026-10-15. The historical H0
+snapshot above is preserved. H1 adds the single-stage factory primitive;
+**H2 has not started and is not authorized by the H1 request.**
+
+- Read [docs/logical_zero_factory_h1.md](docs/logical_zero_factory_h1.md) and
+  the updated per-package `DOCS.md` before extending the factory.
+- `hex_qec.protocols` exports `FactoryCircuitBuilder`, `FactoryCircuitBundle`,
+  and `RotatedSurfaceCodeAdapter`; `hex_qec.modularisation` exports factory
+  code/record/flow/preparation-frame contracts. Generic types must continue
+  to use explicit CSS supports, with surface geometry in its adapter.
+- Signed detector expressions describe the raw physical record. Preparation
+  DEM corrections produce a corrected history; subsequent pure-error repairs
+  affect the boundary frame and separate repaired signs, not past bits. Do
+  not mix a frame-updated terminal measurement with unrepaired raw signs.
+- Reuse `PreparationFramePlan`'s existing CSS decoder handles, cached local
+  converters, and end-frame maps. `resolve` accepts exactly a local prep
+  batch, never a full circuit record. X/Z outputs are inferred Pauli frames,
+  not fault truth. Calls using shared native handles must stay synchronous.
+- Preserve the single final oracle suffix and its exclusion from every
+  operational detector/observable. Full Knill still has noisy final readout.
+- H1 has no public sampling runner, stage decoder, production terminal-label
+  API, multi-stage execution, gap, or projected prior option. Test-only
+  boundary/recovery helpers are not production factory result interfaces.
+- Preserve the 41 focused H1 tests, exact legacy frame-map comparisons,
+  strict signed-flow/DEM gates, and both random byproduct branches when later
+  phases add execution. Do not call these small structural/fault probes a
+  fault-tolerance proof or a paper reproduction.

@@ -48,10 +48,18 @@ Existing coverage is in `test_phase4_adaptive_state_prep.py` and backend tests;
 H0 executed only the adapter/result and validation subsets listed in
 [TEST.md](../../../TEST.md#auxiliary-system-h0-documentation-baseline).
 
-## Proposed only
+## H1 adapter
 
-The [factory specification](../../../docs/README.md) calls for two reused
-supports, exact preparation depths, signed stage/record metadata, and one
-terminal ideal evaluation readout. No factory builder or ledger was added in
-H0. Future compiled cases must reuse circuits/samplers across shots and keep
-the actual consumed-block readout noisy.
+`factory_surface.RotatedSurfaceCodeAdapter(distance)` is the sole implemented
+factory family adapter. Its `code` is a geometry-independent `CodeSpec`,
+`matrices` the four sparse CSS matrices, `blocks()` two complete
+`BlockSupport`s, and `prepare(block,basis,rounds,p)` an existing surface-ordered
+`css_detector_module`. It validates bundled odd d>=3, n=d*d, binary CSS
+commutation/logical anticommutation, and single logical rows. Generic factory
+contracts do not assume d*d. No existing low-level builder changed.
+
+H1 tests d=3/5 exact independent SE depths, support count, hook-builder reuse,
+reset/readout/CNOT noise, and strict signed flows. The factory's actual
+consumed-block readout stays noisy; only its evaluation suffix is ideal.
+See [the H1 guide](../../../docs/logical_zero_factory_h1.md). Multi-stage
+support recycling and compiled sampling remain later work.

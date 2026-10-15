@@ -42,12 +42,27 @@ Existing fixed/adaptive endpoint tests are listed in
 [tests/DOCS.md](../../../tests/DOCS.md); H0 did not rerun protocol Monte Carlo
 or establish agreement with a paper figure.
 
-## Proposed only
+## H1 single-stage factory
 
-The [factory specification](../../../docs/README.md) describes a different
-two-block operation: prepare zero A and plus B, `CX(B,A)`, noisy destructive
-Z readout of A, and a logical X byproduct on B. Repeated stages reuse/reset
-the consumed support. There is one final ideal Z evaluation oracle, excluded
-from operational decoding/confidence. This one-bit factory and its builder,
-ledger, batch results, gap, and `create_codecapacity_dem` flag are absent.
-Full Knill and Fig. 4(d) must retain noisy final readout. H0 starts no H1 work.
+`FactoryCircuitBuilder(adapter, PreparationPlan(r_0,r_plus), physical_error)`
+and `FactoryCircuitBundle` are exported alongside `RotatedSurfaceCodeAdapter`.
+The new `logical_zero_factory.py` builds exactly one stage: noisy zero A and
+plus B preparation, `CX(B,A)`, noisy destructive Z readout of A, and one ideal
+Z evaluation readout of B. Both supports include their check ancillas; no
+third data block or post-gate SE is inserted.
+
+The bundle carries raw record/stage ranges, a signed CSS check ledger,
+prep-only frame-resolution plans, oracle indices, and read-only metadata.
+`build()` verifies signed flows and a strict operational DEM.
+`operational_circuit` excludes the oracle and has no observable annotations;
+raw logical A parity is random and only records the byproduct source.
+
+For raw records the terminal check sign is
+`H_Z*m_A XOR last_Z_A XOR last_Z_B`. After preparation repair, use the
+inferred Pauli frames and repaired signs described in
+[the H1 guide](../../../docs/logical_zero_factory_h1.md). The helper does not
+sample, decode stages, compute production labels, or implement multi-stage
+reuse. Tests use a separate evaluation-only terminal recovery calculation.
+
+Full Knill and Fig. 4(d) retain noisy final readout. H2's runner and repeated
+stages, H3 gap, and `create_codecapacity_dem` remain unimplemented.

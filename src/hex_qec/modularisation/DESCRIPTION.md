@@ -1,5 +1,10 @@
 # `modularisation`
 
+H1 additionally provides factory code/record/flow contracts and reusable
+preparation-frame plans in `factory.py`; see
+[DOCS.md](DOCS.md#h1-contracts-and-preparation-frame-maps). The legacy module
+and simulation descriptions below retain their existing semantics.
+
 This package defines the current module objects, common gadget constructors,
 structured module-output normalization, and the static execution engine.  The
 module objects are ordinary Python classes, not dataclasses or a formal module

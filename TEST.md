@@ -1072,3 +1072,67 @@ revision `5de58f2f80791054411ad3c0885a4fe3671ed56a`. Commands below ran from
 No Python/test algorithms or fault boundaries changed. H1, the full pytest
 suite, opt-in profiling/Monte Carlo runners, factory physics, logical gap,
 and projected-prior validation were not run or implemented in H0.
+
+## Auxiliary-system H1 single-stage factory
+
+Date: 2026-10-15 (Asia/Tokyo); branch `auxiliary-system`, base `bceeabb4`.
+Same Python 3.12.7/source-path environment as H0. All commands ran from Hex.
+
+1. `PYTHONPATH=src python -m pytest -q tests/test_factory_circuit.py`
+
+   PASS: **35 passed**, eight existing dependency deprecation warnings,
+   **1.38 s**, before the additional input/repair contract cases.
+
+2. Targeted regression command:
+
+   ```bash
+   PYTHONPATH=src python -m pytest -q \
+     tests/test_factory_circuit.py \
+     tests/test_phase1_decoder_adapters.py \
+     tests/test_phase2_results.py \
+     tests/test_phase4_adaptive_state_prep.py \
+     tests/test_phase3_stateful_backend.py \
+     tests/test_phase5_confidence_adaptive.py::test_fixed_knill_surface_code_keyword_is_backward_compatible \
+     -k 'not ler_is_statistically_compatible'
+   ```
+
+   PASS after physical-noise/repair guards: **72 passed**, two deselected,
+   eight warnings, **2.62 s**. PASS after the final generic support/shape/noise
+   validation: **75 passed**, two deselected, eight warnings, **2.71 s**.
+   Final run after adding B-SE readout and correlated CNOT pair faults:
+   **77 passed**, two deselected, eight warnings, **2.68 s**. The final run
+   includes all **41 H1 tests** plus 36 existing regressions.
+   The two excluded tests run inherited statistical LER comparisons; no large
+   Monte Carlo or production validation runner was launched.
+
+   The new tests cover seeded d=3/5 zero-noise cases (<=128 shots), both random
+   raw logical branches, correct/wrong X byproducts, signed flows and strict
+   DEM, reversed-CNOT detection, independent depths, complete two-block
+   supports, preparation/pure-error sign repair, noisy operational boundaries,
+   an ideal terminal-only oracle, eight deterministic fault cases,
+   and a terminal logical fault. Prep end-frame maps are compared exactly with
+   legacy correction-to-measurement propagation in both bases. Corrections
+   match legacy CSS arrays; split/whole batches agree and Matching construction
+   is forbidden during `resolve`. Unresolved decoder signs are rejected.
+
+3. Fresh-process import checks:
+
+   ```bash
+   PYTHONPATH=src python -c 'from hex_qec.circuit_generation.factory_surface import RotatedSurfaceCodeAdapter; from hex_qec.protocols import FactoryCircuitBuilder; print("fresh adapter-first import: PASS")'
+   PYTHONPATH=src python -c 'from hex_qec.modularisation.factory import PreparationPlan; from hex_qec.protocols import FactoryCircuitBuilder; print("fresh contracts-first import: PASS")'
+   ```
+
+   PASS: both import orders succeeded. `git diff --check` also passed after
+   source edits. No existing physical builder/decoder implementation changed.
+
+4. `python -m compileall -q src tests` and the documentation integrity probe.
+
+   PASS: compilation succeeded; changed local Markdown links/anchors resolve;
+   original `AGENTS.md`, `STATUS.md`, and `TEST.md` remain exact byte prefixes;
+   the supplied scientific specification remains byte-identical. No generated
+   experiment files were staged.
+
+No H2 sampler/runner, multi-stage recycling, public terminal label, gap,
+projected priors, full pytest suite, paper reproduction, or performance sweep
+was implemented/run in H1. Test-only online/oracle recovery helpers do not
+constitute production result APIs.

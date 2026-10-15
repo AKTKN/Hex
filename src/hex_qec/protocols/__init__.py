@@ -1,2 +1,4 @@
 from .knill_online_offline import knill_online_offline, knill_online_offline_adaptive
 from .steane_online_offline import steane_online_offline
+from .logical_zero_factory import FactoryCircuitBuilder, FactoryCircuitBundle
+from hex_qec.circuit_generation.factory_surface import RotatedSurfaceCodeAdapter

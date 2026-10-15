@@ -10,6 +10,7 @@ contains Python modules but has no `__init__.py`. Historical executions are in
 
 | Test file/group | What it checks |
 | --- | --- |
+| `test_factory_circuit.py` | H1 signed circuit/ledger, preparation frames, oracle isolation, single faults, exact legacy map comparisons |
 | `test_phase1_decoder_adapters.py` | Batch/scalar dtype compatibility, decoder factories, rich results, module normalization |
 | `test_phase2_results.py` | Aggregate wrappers, legacy tuple compatibility, detail-level validation |
 | `test_phase3_stateful_backend.py` | Measurement axes/reconstruction, fixed endpoints, small statistical comparisons |
@@ -42,12 +43,26 @@ baseline compatibility. No new algorithm/fault-boundary tests were necessary
 for this documentation-only phase. No full suite, large Monte Carlo, opt-in
 validation/profile runner, or factory experiment was run.
 
-## Proposed tests, not yet present
+## H1 execution and remaining tests
 
-Later [factory phases](../docs/README.md) need d=3 (occasionally d=5), seeded
-batches of at most 128 shots, both random byproduct branches, signed/pure-error
-checks, gate-direction and fault-boundary cases, causal oracle perturbation,
-two-support role swaps, scalar/batch equivalence, exhaustive `2^9` sector-cost
-checks, graph rejection, and legacy-default regressions. New production paths
-must compile/cache circuits, decoders, and sparse maps outside shot loops.
-H0 adds no source or pytest code and starts none of those later phases.
+The H1 targeted run passed **77 tests** in **2.68 s**, with eight existing
+dependency warnings; two inherited statistical-LER tests were deliberately
+deselected. This includes all 41 new factory tests and relevant adapter,
+result, surface preparation, fixed stateful/noiseless endpoint, and fixed
+Knill compatibility tests. Exact commands and earlier runs are appended to
+[TEST.md](../TEST.md#auxiliary-system-h1-single-stage-factory).
+
+The factory tests use d=3/5 and at most 128 seeded shots. They verify both
+byproducts, raw/repaired signs, reversed CNOT rejection, exact SE/noise/record
+boundaries, two supports, an ideal oracle isolated from all decoders/detectors,
+eight physical fault cases and a terminal logical fault, deterministic
+legacy map equality, and batch decoder reuse/partition equivalence.
+Production multi-stage sampling, logical-error results, gap enumeration, and
+projected-prior tests remain later phases.
+
+Later [factory phases](../docs/README.md) must preserve H1's gates and add
+two-support role swaps, multi-stage causal checks, scalar/batch execution
+equivalence, exhaustive `2^9` sector-cost checks, projected-model rejection,
+and legacy-option regressions as those algorithms are implemented. New
+production paths must compile/cache circuits, decoders, and sparse maps
+outside shot loops. H1 does not start H2.

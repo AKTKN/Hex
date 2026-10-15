@@ -1,8 +1,9 @@
 # `circuit_generation`
 
 This package contains the current code-data loader, code-block allocator, and
-Stim circuit builders.  It is a procedural module; there are no circuit or
-code classes.
+Stim circuit builders. The legacy `circuit_generation.py` remains procedural.
+H1 adds the separate `factory_surface.RotatedSurfaceCodeAdapter`; see
+[DOCS.md](DOCS.md#h1-adapter) for its validated scope and reused primitives.
 
 ## Code-data convention
 

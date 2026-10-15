@@ -1,7 +1,8 @@
-# Hex package: H0 baseline
+# Hex package and auxiliary factory
 
 Audited source: `5de58f2f80791054411ad3c0885a4fe3671ed56a` (`hex-adaptive`).
-H0 adds documentation only on `auxiliary-system`. The package-root
+H0 added documentation on `auxiliary-system`; H1 adds an independent factory
+primitive without changing legacy circuit/decoder paths. The package-root
 `__init__.py` is empty; import APIs from the child packages.
 
 ## Implemented today
@@ -33,13 +34,23 @@ depolarization. No separate idle/gate-duration model is supplied. See
 [tests/DOCS.md](../../tests/DOCS.md) for current versions, checks, and source
 limitations; older detailed descriptions are linked from each child guide.
 
-## Proposed, not implemented or validated in H0
+## H1 primitive and remaining proposals
+
+`FactoryCircuitBuilder(RotatedSurfaceCodeAdapter(d), PreparationPlan(r_0,
+r_plus), physical_error=p).build()` returns the new `FactoryCircuitBundle`.
+Import builder/bundle/adapter from `hex_qec.protocols` and contracts from
+`hex_qec.modularisation`. It builds two blocks and one B-to-A CNOT/destructive
+Z stage, a signed record ledger, and one ideal terminal evaluation region.
+`PreparationFramePlan.resolve(local_records)` resolves each preparation using
+cached Hex decoders/converters and sparse end-frame maps. See the
+[H1 API guide](../../docs/logical_zero_factory_h1.md) for exact fields,
+shapes, equations, reuse, and tested limits.
 
 The [proposed/untested specification](../../docs/README.md) separates a
-two-block one-bit logical-zero factory from full Knill EC. Names such as
-`CodeSpec`, `PreparationPlan`, `TeleportationStage`, `FactoryCircuitBundle`,
-`CompiledFactory`, `FactoryBatchDecoder`, and `SurfaceMWPMHomologyGap` are
-future interface targets, not importable APIs at this baseline. Circuit
+two-block one-bit logical-zero factory from full Knill EC. `CodeSpec`,
+`PreparationPlan`, `TeleportationStage`, `FactoryCircuitBundle`, ledger and
+prep-frame contracts are implemented in H1. `CompiledFactory`,
+`FactoryBatchDecoder`, and `SurfaceMWPMHomologyGap` remain future targets. Circuit
 building, signed-frame processing, decoding, and analysis must remain distinct;
 surface-specific graph assumptions belong in a surface adapter. Hex must not
 gain YAML, Parquet, or filesystem experiment runners for this extension.

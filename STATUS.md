@@ -748,3 +748,94 @@ reported no whitespace errors. The final staged diff must remain Markdown-only.
 
 Next boundary: stop after H0 documentation review/commit/push. H1's circuit
 primitive requires a separate request; no factory implementation was started.
+
+## Auxiliary-system H1 single-stage factory
+
+Date: **2026-10-15 (Asia/Tokyo)**. H1 was separately requested after H0.
+Base: `bceeabb4e3dad25a4cfffc92b91faf1008382747`, on clean tracked
+`auxiliary-system`. `git fetch origin` succeeded and both auxiliary refs
+matched before edits. No branch switch, reset, stash, or dependency/bench edit
+was needed. The H0 environment above is unchanged.
+
+### Implemented scope
+
+- `circuit_generation/factory_surface.py`: the rotated surface adapter reuses
+  bundled matrices, `generate_blocks`, surface-specific noisy SE construction,
+  and `css_detector_module`. It validates code/noise/depth boundaries without
+  putting d*d assumptions into generic contracts.
+- `modularisation/factory.py`: frozen code/preparation/support/range/record/
+  signed-check/stage dataclasses and adapter protocol. `PreparationFramePlan`
+  reuses Hex's four decoder handles/local correction maps, caches both m2d
+  converters, and precomputes sparse end-frame maps. Its prep-only batch
+  resolver includes DEM inference and both X/Z pure-error repairs, rejecting
+  unresolved check signs. No sampled truth is read by this calculation.
+- `protocols/logical_zero_factory.py`: builder/bundle for exactly `T_tel=1`.
+  Two noisy prepared supports use independent positive depths `r_0,r_plus`;
+  transversal `CX(B_plus,A_zero)` and noisy destructive Z readout of A leave B
+  as the operational survivor. One ideal Z readout of B is a separate terminal
+  evaluation suffix. No third block, post-gate SE, physical software correction,
+  intermediate oracle, or observable annotation is added.
+- Signed last-round check expressions propagate both preparation signs across
+  the CNOT. Raw A terminal checks are `H_Z*m_A XOR last_Z_A XOR last_Z_B`.
+  Raw logical parity remains random and is exposed only as a byproduct source.
+  The ledger stores absolute physical record IDs and explicit causal regions.
+  Metadata is a read-only mapping of immutable values, including circuit hash
+  and frame/oracle conventions.
+- `build()` checks signed prefix flows with `unsigned=False`, strict
+  operational DEM extraction without gauge/disjoint approximation allowances,
+  and terminal noiseless oracle isolation. Prep inference accepts only the
+  local record width. No operational decoder can consume oracle columns.
+- Added public exports, 41 focused tests, an H1 API/equation guide, and updated
+  affected `DOCS.md`/`DESCRIPTION.md`, README, agent guide, and test log. The
+  supplied scientific specification remains byte-identical.
+
+### Validation actually run
+
+1. Initial `PYTHONPATH=src python -m pytest -q tests/test_factory_circuit.py`:
+   **35 passed**, eight existing dependency warnings, **1.38 s**.
+2. Targeted H1 + legacy regression command (see exact command in `TEST.md`),
+   after structural noise/repair guards: **72 passed**, two statistical-LER
+   tests deselected, eight warnings, **2.62 s**.
+3. The same command after generic shape/support/input validation:
+   **75 passed**, two deselected, eight warnings, **2.71 s**. This includes
+   39 H1 tests and 36 existing regressions at that point.
+4. Final targeted command after adding B-SE readout and correlated CNOT fault
+   cases: **77 passed**, two deselected, eight warnings, **2.68 s**, including
+   all **41 final H1 tests** and 36 existing regressions. No pytest failures
+   occurred in these runs.
+5. Fresh adapter-first and contracts-first imports both passed in separate
+   Python processes. `git diff --check` passed after source edits.
+6. `python -m compileall -q src tests` passed. Documentation link/anchor,
+   preserved historical root-document prefixes, and byte-identical scientific
+   specification checks passed.
+
+New tests use deterministic seeds, d=3 (three small d=3/5 zero-noise fixtures),
+and <=128 physical shots per batch. They cover both logical branches and wrong
+byproduct sensitivity, reversed gate rejection, negative signed-flow rejection,
+raw/pure-error signs from both blocks, exact reset/SE/CNOT/readout boundaries,
+oracle exclusion, and legacy Pauli-to-measurement map equality for X and Z.
+Eight targeted cases cover both resets, either SE readout, either block after
+CNOT, a correlated CNOT pair fault, and consumed-block readout; a terminal logical fault changes only the
+evaluation label. Tests compare batch partitions and legacy corrections and
+forbid constructing Matching graphs during prep resolution. New prepared
+signs fail clearly if a decoder refuses to repair them.
+
+### Limits and next boundary
+
+**H2 has not started.** There is no `CompiledFactory`, factory sampler,
+`FactoryBatchDecoder/Result`, repeated two-block role swapping, online stage
+decode, or production logical-error result path. The terminal code-capacity
+readout convention is reserved in metadata and checked only by test helpers.
+Logical gap and `create_codecapacity_dem` are absent. No Parquet/YAML or
+experiment runner was added and no Monte Carlo sweep/full suite was launched.
+
+Legacy preparation priors retain their existing matchable projection and
+weight formula; they are not certified as optimal post-repair priors. Strict
+DEM extraction is undecomposed and makes no graphlike-model claim. Tests
+establish the stated structural/frame boundaries and selected faults, not
+general gadget fault tolerance, a threshold, or paper reproduction. Native
+decoder objects/Stim circuits remain mutable even though contract metadata and
+support tuples are immutable; handles are for synchronous worker-local reuse.
+
+The parent bench's old exact Hex revision pin is unchanged. Commit and push
+outcome are reported in the H1 handoff; stop after that single H1 commit/push.

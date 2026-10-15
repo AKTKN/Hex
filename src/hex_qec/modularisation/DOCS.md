@@ -63,8 +63,31 @@ arbitrary hyperedges, signed factory flows, or general dynamic circuits.
 H0 ran `test_phase1_decoder_adapters.py` and `test_phase2_results.py`: 15
 passed. See [TEST.md](../../../TEST.md#auxiliary-system-h0-documentation-baseline).
 
-## Proposed only
+## H1 contracts and preparation-frame maps
 
-The [factory design](../../../docs/README.md) requires a causal signed ledger,
-two physical supports, batch frame updates, and evaluation-only oracle access.
-No new module, dataclass, fault boundary, or public option is implemented in H0.
+`factory.py` adds frozen `CodeSpec`, `PreparationPlan`, `BlockSupport`,
+`CircuitRegion`/`IndexRange`, `MeasurementLedger`/`MeasurementRecord`,
+`RecordParity`, `SignedCheckFlow`, `TeleportationStage`, and `PreparationFrame`
+contracts plus the `FactoryCodeAdapter` protocol. Supports and signed parity
+indices are immutable tuples; repeated parity indices cancel over GF(2).
+
+`PreparationFramePlan(module,block,region)` caches X/Z m2d converters, reuses
+the existing four CSS decoder handles/local history maps, and builds sparse
+end-frame maps `(legacy_variables,n)` once. `resolve(local_measurements)`
+requires exactly `(shots,prep_measurements)` binary values. It performs the
+existing DEM-history correction and final sign repair, returning inferred
+`x,z` Pauli frames `(shots,n)` and repaired X/Z signs `(shots,m_x/m_z)`.
+Nonzero repaired signs raise `ValueError`. It neither samples nor reads any
+online/oracle record. Native handles are for synchronous worker-local reuse.
+
+`corrected_history` includes DEM corrections but does not retroactively apply
+end-of-prep pure errors to past check measurements. Pure errors are included
+in `x,z` and the separate repaired signs. With `CX(B,A)`, future measurements
+must use `x_A'=x_A XOR x_B` and `z_B'=z_B XOR z_A`; raw terminal detector
+expressions and repaired check signs must not be mixed. H1 validates both
+frame maps exactly against the legacy Pauli-to-measurement machinery and
+legacy CSS correction arrays, including p=0 intrinsic sign randomness.
+
+See [the H1 guide](../../../docs/logical_zero_factory_h1.md) for equations,
+field semantics, cache lifetime, and scope. There is no H2 factory runner,
+stage decoder, repeated-support execution, or production logical-label API.

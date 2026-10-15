@@ -1,4 +1,9 @@
 # Hex
+
+The `auxiliary-system` branch also provides an H1 two-block, single-stage
+logical-zero factory circuit and preparation-frame ledger. See
+[the factory API guide](docs/logical_zero_factory_h1.md) for construction,
+noise/oracle conventions, tested boundaries, and the remaining H2+ work.
 ### Note: This repository is modified version of https://github.com/ewanmurphy/Hex. 
 `hex_qec` is a Python tool for building fault-tolerant quantum error-correction protocols from reusable circuit modules.
 
