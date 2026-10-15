@@ -595,3 +595,156 @@ AlwaysLong shots) observed six warm-up misses and 35 measured hits, with
 0.011149359 s/shot measured E2E time. The cache report intentionally keeps
 warm-up calls out of the measured-shot reference-sample total. No unrelated
 optimization was implemented.
+
+## Auxiliary-system H0 baseline audit
+
+Date: **2026-10-15 (Asia/Tokyo)**. Scope: documentation and initial audit only.
+**H1 has not started.** All preceding status entries are preserved history;
+the versions and checkout facts below describe this H0 session.
+
+### Git and workspace baseline
+
+- Hex worktree: `/home/quantum_teresheys/workspace/knilll_bench/external/Hex`.
+  Initially clean on `knill-bench-integration` at
+  `5de58f2f80791054411ad3c0885a4fe3671ed56a` (`Fix diagnosis code.`).
+- `git fetch origin` succeeded. Neither a local nor remote `auxiliary-system`
+  existed. Local `hex-adaptive`, `origin/hex-adaptive`, and the checked-out
+  revision all matched the SHA above. Created `auxiliary-system` directly
+  from local `hex-adaptive` after verifying ancestry; no reset/stash/rebase.
+- `origin` is `https://github.com/AKTKN/Hex.git`; `upstream` is
+  `https://github.com/ewanmurphy/Hex.git`. The other worktree remains on
+  `hex-parallel` at `40c847e484bde7981ccfafa77a13d500e34bb1d2` under
+  `temporal_confidence/external_libs/Hex`. Its branch was not switched or edited.
+- The containing knill_bench repo is separate, on `main` at `b3cc72a`, with
+  user-owned changes. Its `external/` and implementation prompts are ignored
+  by that repo. No bench or other dependency source/config changes belong to
+  H0. lomatching and surface-sim integration worktrees remain at `b55a7a6` and
+  `493f800` respectively; their READMEs and bench dependency docs were read.
+- The only H0 diff is Markdown. The audit revision above remains the Python
+  source revision; the documentation commit and actual push result are
+  reported in the phase handoff. The required target is `origin/auxiliary-system`.
+
+### Actual environment
+
+Interpreter: `/home/quantum_teresheys/anaconda3/bin/python`, Python **3.12.7**.
+No environment installation or dependency upgrade was performed.
+
+| Distribution | Observed version |
+| --- | --- |
+| NumPy | 1.26.4 |
+| SciPy | 1.13.1 |
+| Stim | 1.15.0 |
+| PyMatching | 2.3.1 |
+| stimbposd | 0.2.0 |
+| ldpc | 2.1.2 |
+| pytest | 7.4.4 |
+| Matplotlib | 3.9.2 |
+| hex-qec | Not installed; source declares 0.1.0 |
+
+Tests use `PYTHONPATH=src` from this Hex worktree. An import probe confirmed
+`hex_qec.__file__` resolves inside this worktree. LDPC resolves to the local
+`/home/quantum_teresheys/workspace/color_code_project/ldpc_v2_modifiedUF/src_python/ldpc/__init__.py`
+fork; the other listed numerical imports resolve inside the Anaconda
+environment. lomatching/surface-sim are not installed in this interpreter.
+These are not the newer versions pinned by knill_bench's lockfile, and the
+bench bootstrap was not run.
+
+### Audited code and current behavior
+
+Read `AGENTS.md`, `STATUS.md`, `README.md`, `PLAN.md`, `TEST.md`, package
+descriptions/exports, and the supplied implementation/specification documents.
+Inspected `circuit_generation/circuit_generation.py`,
+`modularisation/module_generation.py`, `modularisation/modularised_circuit.py`,
+`protocols/knill_online_offline.py`, all decoder modules, and the validation
+builders/statistics/storage/plotting paths.
+
+- Circuit builders load sparse CSS matrices, construct SE rounds and ideal
+  encoders, and allocate complete data/check supports. The d=3 probe confirmed
+  matrix shapes `(4,9), (4,9), (1,9), (1,9)` and both-basis three-round
+  preparation dimensions `(17 qubits, 24 measurements, 20 detectors)` for X
+  and Z at p=0.001. This probe built circuits but sampled no shots.
+- The static engine samples a complete circuit, then applies local DEM/final
+  sign repairs and Bell logical byproducts through deterministic software
+  correction maps. Fixed Knill uses `2*T+1` distinct supports, ideal initial
+  data, and noisy final measurement. Its public return is still two counts.
+- Adaptive SE uses short/long descriptions, synchronized pair OR decisions,
+  per-shot physical continuation, and executor-owned deterministic caches.
+  It is a separate reference path, not a static batched two-block factory.
+- Existing decoder protocols/adapters retain batch shapes and legacy calling
+  conventions. BP-LSD confidence is cluster risk; no validated factory
+  homology-sector gap or projected code-capacity prior option exists here.
+- Validation runners compare full Knill backends/forced-long endpoints and
+  save aggregate CSV/JSON; analysis consumes saved data. They do not validate
+  the proposed one-bit factory, reproduce Fig. 4(d), or write the proposed
+  two-table factory schema.
+
+### H0 deliverables
+
+- Extended `AGENTS.md` with branch/scope, deterministic offline inference,
+  causal record access, no oracle leakage, object reuse, fast tests, and
+  mandatory per-directory documentation rules. Existing history is intact.
+- Copied the supplied `implementation/auxiliary_factory_theory.md` unchanged
+  into `docs/auxiliary_factory_theory.md`; byte comparison passed. SHA-256:
+  `ca7a2748f60e05c2944cddd318c1096eedb269293280826661180b49056337b4`.
+  [docs/README.md](docs/README.md) explicitly marks it **proposed / untested**.
+- Added eight `DOCS.md` guides: package root, five Python child packages,
+  `validation/`, and `tests/`. Current APIs/shapes/noise/caching/limitations are
+  separated from proposed interfaces, with links to existing descriptions.
+  Matrix-data-only subdirectories contain no Python modules.
+- Appended actual baseline evidence to `TEST.md`. No algorithm, public API,
+  circuit, fault boundary, dependency, or test implementation changed.
+
+### Checks actually run
+
+| Command (from Hex root) | Result |
+| --- | --- |
+| `PYTHONPATH=src python -m pytest -q tests/test_phase1_decoder_adapters.py tests/test_phase2_results.py` | 15 passed, 8 warnings, 1.86 s |
+| `PYTHONPATH=src python -m pytest -q tests/test_validation_infrastructure.py tests/test_knill_repro_analysis.py` | 14 passed, 8 warnings, 2.70 s |
+| `PYTHONPATH=src python -m pytest --collect-only -q tests` | 99 collected, 8 warnings, 0.88 s; not a full-suite run |
+
+Warnings are existing LDPC/pkg_resources namespace deprecations. The selected
+legacy static fixtures still sample 256 deterministic measurements despite
+requesting one shot; no new tests or Monte Carlo jobs were added. No failures
+occurred in these pytest checks. No full-suite or production runner was run.
+
+Documentation integrity checks passed: eight module-directory guides are
+present, local Markdown links resolve, the three historical root documents
+remain exact byte prefixes, the theory copy matches, and `git diff --check`
+reported no whitespace errors. The final staged diff must remain Markdown-only.
+
+### Known issues and scientific limits (unchanged)
+
+1. Legacy matchable DEM weights are `log1p(q)-log(q)`, not the proposed
+   `log((1-q)/q)`. Edge priors use a projection sum. This is audited behavior,
+   not a newly certified likelihood or a change authorized by H0.
+2. CSS callbacks compile local m2d converters on every call. Generic detector,
+   noiseless-preparation, and Steane callbacks construct decoders during
+   calls; the adaptive reference backend creates one simulator per shot.
+   These do not satisfy the proposed factory's object reuse goals.
+3. `simulate` uses fixed 256-shot batches and can exceed the requested count.
+   CSS source assumes single-Pauli representative faults; support remapping
+   is text-based with limited validation. The CSS constructor's `new_support`
+   block is unreachable after `_profile_section` returns; current builders
+   use `set_support`. `only_postselection_module` remapping is incomplete.
+4. `validation/run_knill_repro.sh` actually defaults to d=3/5,
+   p=0.002/0.003/0.005, 25,600 shots, three replicates. Its older README states
+   different launcher defaults; [validation/DOCS.md](validation/DOCS.md)
+   records the source values. Historical single-basis detector counts are
+   clarified against code in the circuit-generation guide.
+5. The external `decoder-confidence/FUTURE.md` has unresolved logical-gap
+   correctness warnings. Read-only inspection found the unsplit constrained
+   path appends an observable row and its MWPM builder accepts a check matrix
+   directly. This can create degree-three columns; forced-gap correctness and
+   graphlikeness are **not assumed or certified**. No external code was copied
+   or modified and no gap numerical study was run.
+6. The proposed graph lift still requires degree/potential/domain validation,
+   finite-weight/p=0 rules, and exhaustive d=3 checks. Projected circuit priors
+   after nonlinear offline repair are approximations, not exact conditional
+   posteriors. No oracle leakage or factory fault-tolerance claim is inferred
+   from the 29 passing legacy tests.
+7. Advancing this dependency worktree's HEAD will make the old bench bootstrap's
+   exact-SHA check reject it. H0 deliberately does not update that bench pin;
+   Python behavior is unchanged and bench dependency integration is later work.
+
+Next boundary: stop after H0 documentation review/commit/push. H1's circuit
+primitive requires a separate request; no factory implementation was started.

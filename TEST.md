@@ -1018,3 +1018,57 @@ No adaptive simulator or core-code refactor was implemented or tested.
     B/C structural probes observed 5 and 6 logical errors. The report
     contained 3 base workflow rows and 3 pairwise comparison rows; the result
     was `statistically_inconclusive` without an equivalence margin.
+
+## Auxiliary-system H0 documentation baseline
+
+Date: 2026-10-15 (Asia/Tokyo). Hex branch `auxiliary-system`, audited Python
+revision `5de58f2f80791054411ad3c0885a4fe3671ed56a`. Commands below ran from
+`/home/quantum_teresheys/workspace/knilll_bench/external/Hex` with
+`/home/quantum_teresheys/anaconda3/bin/python` (3.12.7).
+
+1. `PYTHONPATH=src python -m pytest -q tests/test_phase1_decoder_adapters.py tests/test_phase2_results.py`
+
+   PASS: **15 passed**, eight existing dependency deprecation warnings,
+   **1.86 s**. Covers batch/scalar casts, generator/result compatibility,
+   module normalization, and aggregate/detail-level results. Existing static
+   fixtures sample a full 256-shot deterministic batch; they were not changed.
+
+2. `PYTHONPATH=src python -m pytest -q tests/test_validation_infrastructure.py tests/test_knill_repro_analysis.py`
+
+   PASS: **14 passed**, eight existing dependency deprecation warnings,
+   **2.70 s**. Synthetic counts/checkpoint/plot/report fixtures only; no
+   validation Monte Carlo CLI was launched or experiment results committed.
+
+3. `PYTHONPATH=src python -m pytest --collect-only -q tests`
+
+   PASS: **99 tests collected**, eight warnings, **0.88 s**. This inventory
+   does not mean all 99 tests were executed. H0 executed the 29 tests above.
+
+4. Source import/matrix/circuit probe with `PYTHONPATH=src python` importing
+   `hex_qec`, public adapter/result/protocol/backend APIs,
+   `get_parity_check_matrices('surface', 3)`, and
+   `stabilizer_measurement_circuit_both_detectors(matrices, basis, 3, 0.001, surface_code=True)`
+   for bases `z` and `x`.
+
+   PASS: Hex import resolved to this worktree. Matrix shapes were
+   `(4,9), (4,9), (1,9), (1,9)`; both circuits had 17 qubits, 24 measurements,
+   and 20 detectors. No sampling or new scientific validation was performed.
+
+5. `cmp /home/quantum_teresheys/workspace/knilll_bench/implementation/auxiliary_factory_theory.md docs/auxiliary_factory_theory.md`
+   and `sha256sum docs/auxiliary_factory_theory.md`.
+
+   PASS: exact byte copy; SHA-256
+   `ca7a2748f60e05c2944cddd318c1096eedb269293280826661180b49056337b4`.
+   Its proposed/untested status is in `docs/README.md` and `STATUS.md`.
+
+6. Documentation integrity probe (`python` using `pathlib`, regular expressions,
+   and `git show HEAD:<file>`) and `git diff --check`.
+
+   PASS: all eight Python module directories have `DOCS.md`; local Markdown
+   link destinations exist; previous `AGENTS.md`, `STATUS.md`, and `TEST.md`
+   contents are preserved as exact byte prefixes; the theory copy is exact;
+   tracked changes contain Markdown only; no whitespace errors were reported.
+
+No Python/test algorithms or fault boundaries changed. H1, the full pytest
+suite, opt-in profiling/Monte Carlo runners, factory physics, logical gap,
+and projected-prior validation were not run or implemented in H0.

@@ -580,3 +580,87 @@ environment, so source-level smoke tests use `PYTHONPATH=src`.  The checked-in
 package requires `stimbposd`, which was initially absent from that environment
 and was installed for baseline testing; the observed installed versions are
 Stim 1.15.0, PyMatching 2.3.1, stimbposd 0.2.0, and ldpc 2.1.2.
+
+## Auxiliary-system development contract (H0)
+
+Added 2026-10-15. This section governs the auxiliary-system work; the preceding
+adaptive-SE instructions and history remain intact. Current facts and actual
+test evidence are appended to [STATUS.md](STATUS.md#auxiliary-system-h0-baseline-audit)
+and [TEST.md](TEST.md#auxiliary-system-h0-documentation-baseline).
+
+### Scope and Git lineage
+
+- Work only in the Hex worktree on `auxiliary-system`, descended from
+  `hex-adaptive` at `5de58f2f80791054411ad3c0885a4fe3671ed56a`. Do not base
+  this work on `master`, `main`, or the separate `hex-parallel` worktree.
+- Inspect status, branches, remotes, and worktrees; fetch before branch setup.
+  Track/fast-forward an existing auxiliary branch safely. Never overwrite or
+  stash user changes, reset history destructively, or force-push. Stop on
+  ambiguous lineage. Push only the requested branch to `origin` (AKTKN/Hex).
+- H0 is documentation and audit only. H1 has not started. Later phases require
+  a separate user request after review; do not infer authorization from a
+  roadmap. Do not edit knill_bench or other dependency checkouts from a Hex phase.
+- Preserve public signatures, circuit/noise ordering, frame conventions, and
+  legacy numerical behavior unless the active phase explicitly changes them.
+  No large sweeps, generated experiment data, or unrelated refactors.
+
+### Scientific and causal boundaries
+
+- Read [docs/README.md](docs/README.md) and the unchanged user-supplied
+  [auxiliary_factory_theory.md](docs/auxiliary_factory_theory.md). The factory,
+  gap, and projected-prior specification is **proposed / untested** in H0;
+  baseline adaptive tests do not validate it.
+- Full Knill EC and the proposed one-bit factory have distinct circuits and
+  final readouts. Keep full Knill/Fig. 4(d) final readout noisy. The future
+  factory has noisy consumed-block readout and exactly one ideal final
+  evaluation oracle on its survivor, with no intermediate oracle.
+- Stage `j` may use only its operational measurement prefix and previously
+  committed software frame. Exclude later records and oracle indices from
+  decoder inputs, detector construction for inference, confidence, priors,
+  selection, and resource certification. Sampled fault vectors and truth
+  labels belong only to evaluation/testing.
+- Track signed CSS checks and pure-error repairs from both preparations.
+  Random logical teleportation outcomes are byproducts, not deterministic
+  detectors. Apply inferred corrections once in the software frame, without
+  double-applying them physically.
+- Offline decoding of identical records/configuration must be deterministic:
+  explicit seeds for any randomized component, fixed ordering/tie conventions,
+  no resampling based on quality, no truth-dependent recovery. Fixed factory
+  trajectories are sampled once; threshold cuts and first-rejection costs
+  are later analysis. Same seeds across different backends do not imply the
+  same physical fault realization.
+- Treat `decoder-confidence` forced-gap code as an unverified reference, not a
+  certified implementation. Appending a logical row can break graphlikeness.
+  Require validated graph structure and exact small-code sector comparisons;
+  distinguish min-sum gap from posterior log-odds and label score units.
+- Circuit-informed projected priors are approximations after nonlinear
+  offline repair. Preserve complete detector/logical event signatures and
+  XOR probabilities; reject unsupported structures instead of discarding them.
+
+### Object lifetime, tests, and documentation
+
+- New factory code must build/compile circuits, samplers, decoder graphs,
+  sparse correction maps, m2d mappings, and frame tables once per complete
+  configuration/worker, then process stages across batches. No per-shot
+  reconstruction of expensive objects. Do not share mutable decoder state
+  across concurrent shots without a defined isolation/reset rule. Legacy
+  exceptions are audited limitations, not permission to repeat them.
+- Separate circuit building, signed-frame processing, decoding, and analysis
+  with documented dataclasses/protocols. Keep planar surface/MWPM assumptions
+  out of generic code interfaces. Hex core must not acquire bench YAML,
+  PyArrow, or filesystem-output responsibilities for this extension.
+- Every changed algorithm/fault boundary needs fast focused pytest tests:
+  normally d=3, at most a few d=5 cases, <=128 seeded shots, no network,
+  no large sweeps or timing-flaky assertions. Run relevant existing regressions
+  too; retain inherited 256-shot fixtures when auditing legacy behavior.
+  Report failures honestly and fix within scope or stop; do not claim a
+  scientific invariant passed merely because ordinary regression tests pass.
+- Maintain `DOCS.md` in the package root, all Python module directories under
+  `src/hex_qec/`, and affected validation/tests directories. Document actual
+  APIs, equations, noise, shapes, caching, tests, and limitations separately
+  from proposed APIs. Cross-link and preserve existing `DESCRIPTION.md` files.
+  Append session evidence to `STATUS.md` and `TEST.md`; extend this guide when
+  global conventions change. Never label proposed work implemented/tested.
+- Finish each authorized phase with one scoped commit and a normal push only
+  after checks pass. Stage intended source/tests/docs only and report the SHA,
+  exact checks, push result, and remaining limitations. Do not advance phases.
