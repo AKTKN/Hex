@@ -118,9 +118,12 @@ class FactoryBatchDecoder:
         return self._decode_operational(measurements, shot_id_start=shot_id_start)[0]
 
     def _decode_operational(self, measurements: np.ndarray, *,
-                            shot_id_start: int) -> tuple[FactoryOperationalBatch, np.ndarray]:
-        batch = _measurement_batch(measurements, self._oracle.start)
-        shots, n, stages = len(batch), self._readout.num_data_qubits, len(self._stages)
+                            shot_id_start: int, stage_count: int | None = None,
+                            score_gaps: bool = True) -> tuple[FactoryOperationalBatch, np.ndarray, np.ndarray]:
+        active = self._stages if stage_count is None else self._stages[:stage_count]
+        width = self._oracle.start if stage_count is None else active[-1].measurement.measurements.stop
+        batch = _measurement_batch(measurements, width)
+        shots, n, stages = len(batch), self._readout.num_data_qubits, len(active)
         _validate_shot_ids(shot_id_start, shots)
         initial = self._initial.resolve(batch[:, self._initial.region.measurements.slice])
         memory_x, memory_z = initial.x, initial.z
@@ -130,9 +133,10 @@ class FactoryBatchDecoder:
         resolved = np.empty((shots, stages), dtype=bool)
         frame_x = np.empty((shots, stages, n), dtype=bool)
         frame_z = np.empty_like(frame_x)
-        gaps = np.empty((shots, stages), dtype=np.float64)
+        gaps = (np.empty((shots, stages), dtype=np.float64) if score_gaps
+                else np.zeros((shots, stages), dtype=np.float64))
 
-        for index, stage in enumerate(self._stages):
+        for index, stage in enumerate(active):
             plus_region = stage.preparations[-1]
             plus = self._plans[plus_region.measurements.start].resolve(batch[:, plus_region.measurements.slice])
             # A reset discards that physical support's old X/Z frame. The
@@ -142,7 +146,8 @@ class FactoryBatchDecoder:
             syndrome = self._readout.syndrome(measured)
             # Score only this stage's corrected syndrome, before recovery.
             # The graph is independent of future records and terminal truth.
-            gaps[:, index] = self._readout.score_gap(syndrome)
+            if score_gaps:
+                gaps[:, index] = self._readout.score_gap(syndrome)
             recovery = self._readout.recover(syndrome)
             byproduct = self._readout.logical_parity(measured ^ recovery)
             memory_x = plus.x ^ self._readout.byproduct_frame(byproduct)
@@ -155,14 +160,27 @@ class FactoryBatchDecoder:
             frame_z[:, index] = memory_z
 
         shot_id = np.arange(shots, dtype=np.uint64) + np.uint64(shot_id_start)
-        return FactoryOperationalBatch(shot_id, tuple(stage.index for stage in self._stages),
+        return FactoryOperationalBatch(shot_id, tuple(stage.index for stage in active),
                                        syndromes, raw_byproducts, byproducts, resolved,
-                                       frame_x, frame_z), gaps
+                                       frame_x, frame_z), gaps, measured
+
+    def decode_stage_input(self, measurements: np.ndarray, stage_index: int) -> np.ndarray:
+        """Return interpreted (shots,n) Z records before this stage's recovery.
+
+        Requires exactly the prefix ending at this stage's destructive readout.
+        Used for setup-time controlled-fault projection; no final oracle, gap
+        or terminal label is evaluated. Earlier stages keep Hamming recovery.
+        """
+        if (isinstance(stage_index, bool) or not isinstance(stage_index, Integral)
+                or not 0 <= stage_index < len(self._stages)):
+            raise ValueError("stage_index is outside the factory")
+        return self._decode_operational(measurements, shot_id_start=0,
+                                       stage_count=int(stage_index) + 1, score_gaps=False)[2]
 
     def decode(self, measurements: np.ndarray, *, shot_id_start: int = 0) -> FactoryBatchResult:
         """Decode fixed physical records once; labels cannot affect earlier fields."""
         batch = _measurement_batch(measurements, self._width)
-        operational, gaps = self._decode_operational(batch[:, :self._oracle.start], shot_id_start=shot_id_start)
+        operational, gaps, _ = self._decode_operational(batch[:, :self._oracle.start], shot_id_start=shot_id_start)
         error = self._readout.evaluate_terminal(batch[:, self._oracle.slice], operational.output_frame_x[:, -1])
         return FactoryBatchResult(**vars(operational), logical_error=error,
                                   gaps=gaps, gap_units=self._readout.gap_units)

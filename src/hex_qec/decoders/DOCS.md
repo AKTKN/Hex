@@ -102,12 +102,60 @@ a PyMatching dependency, is now declared directly for setup-time planarity.
 See [the H3 guide](../../../docs/logical_zero_factory_h3.md) for the proof,
 API example, scientific/numerical limits, causal integration and tests.
 
-## Proposed only: projected priors
+## H4 circuit-informed projected priors
 
-Future projected priors must retain complete detector/logical
-signatures (including detector-free logical events), combine identical
-independent events with `q1+q2-2*q1*q2`, and reject unsupported hyperedges.
-Nonlinear offline repair prevents calling a raw circuit projection an exact
-conditional posterior. Graphs, mappings, and decoders must be cached per
-complete configuration, with no oracle or later-stage data in inference.
-H4 priors and their validations have not started.
+`codecapacity_dem.py` adds `ProjectedDEMBuilder(bundle, *,
+convention=PreparationDecoderConvention(), fault_batch_size=1024)` and frozen
+`ProjectedDEMResult`, `ProjectedDEMDiagnostics`, `ProjectedErrorModel`,
+`FaultMechanism`, `ProjectedFault`, `FaultSignature`, `ProjectedEvent` contracts.
+All are exported from `hex_qec.decoders`, together with
+`merge_independent_events` and `UnsupportedProjectedModel`.
+
+The full bundle supplies the noisy circuit, code/logical supports, signed
+stage/preparation/destructive-readout ledger and existing prep/frame plans.
+For stage j, the builder propagates controlled model faults through only the
+prefix ending at j's destructive readout, including both preparations and
+earlier stages. One deterministic lane per model term is processed in bounded
+chunks. Canonical reset sentinels affect maps only. The actual full-history
+prep decoder and Hamming prefix frame processor turn each faulted reference
+into interpreted target records before current online recovery. Only H_Z's
+final m_z checks and L_Z parity enter the event signature; prep histories are
+not concatenated into online H. Oracle/future bits are never supplied.
+
+X/Y/Z errors and exactly factored independent generators of DEPOLARIZE1/2
+are supported. The latter have `q=(1-(1-4^k*p/(4^k-1))^(1/2^(2k-1)))/2`;
+exclusive physical Pauli branches are not incorrectly treated as independent
+p/15 events. Each mechanism retains original gate p, generator q, absolute
+location/support and origin stage/region. Unknown noise, noisy measurement
+arguments and unrolled-layout violations fail; zero-probability instructions
+are counted without decoding impossible hypothetical records. Underflow fails.
+
+Identical complete `(detector,logical)` signatures combine by XOR probability,
+never sum. Different logical labels remain separate, including logical-only
+events. No-op events and all nonzero mechanisms retain provenance. The model
+exports a fresh Stim DEM; `matching_matrices()` returns sparse `(m_z,E)` H,
+`(E,)` L and natural-log weights `log1p(-q)-log(q)`. E indexes merged events,
+not data qubits. H3 gap corrections therefore have `(shots,2,E)` axes.
+
+`build(j)` returns cached supported results, `inspect(j)` retains diagnostics
+even when the event model cannot compile, and `compile_gap(j)` returns the
+same cached validated H3 graph. Hyperedges, detector-free logical terms,
+q>=1/2, unsupported weights/potential/topology raise before lossy matching.
+At p=0 the empty prior is inspectable/buildable; compilation explicitly asks
+for the Hamming baseline instead of inventing infinite weights or fallback.
+
+Results record `prior_convention="circuit_informed_projected"`, the named
+single-fault/noiseless-reference approximation, prep convention, graphlike /
+lift-valid flags, diagnostics, batch size and full/prefix/config/reference/model
+hashes. Configuration includes actual prep weights/maps and native versions.
+Construct/cache synchronously per worker; no shot-dependent priors, graphs or
+weights are created. Default factory/full Knill paths are unchanged; H5's
+`create_codecapacity_dem` flag is absent.
+
+The approximation has observed limits: raw vs prep-resolved signatures differ
+for 375/1,666 and 280/2,571 mechanisms in the d=3 two-stage fixture. A plus
+SE fault's logical response also differs from the reference on 13/16 paired
+physical records, and two-fault responses can be nonlinear. These are retained
+limitations, not exact marginal/conditional priors or validated LER gains.
+See [the H4 guide](../../../docs/logical_zero_factory_h4.md) for exact equations,
+API usage, scope/caching semantics, counters and test evidence.

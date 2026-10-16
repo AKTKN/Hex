@@ -74,5 +74,7 @@ equations and result shapes.
 
 Full Knill and Fig. 4(d) retain noisy final readout. H3's
 [spatial sector gap](../../../docs/logical_zero_factory_h3.md) is now supplied
-by the separate decoder/executor. `create_codecapacity_dem` and circuit-informed
-projected priors remain unimplemented.
+by the separate decoder/executor. H4 supplies an explicit
+[projected-prior builder](../../../docs/logical_zero_factory_h4.md), preserving
+physical builders and default execution. The public `create_codecapacity_dem`
+option remains H5 work and is not implemented here.

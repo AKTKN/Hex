@@ -15,6 +15,14 @@ See [DOCS.md](DOCS.md#h3-surface-homology-gap) and the
 weights, units, native precision and exhaustive validation. Factory scoring
 uses a distinct cached graph and preserves the H2 recovery/frame behavior.
 
+H4 adds the opt-in `codecapacity_dem.ProjectedDEMBuilder`, complete mechanism/
+event/result contracts and cached log-weight H3 compilation. It projects
+controlled physical faults through the actual prep decoder at one noiseless
+causal reference; it has measured context/multi-fault limits. See
+[DOCS.md](DOCS.md#h4-circuit-informed-projected-priors) and
+[the H4 guide](../../../docs/logical_zero_factory_h4.md) before using its
+`circuit_informed_projected` approximation. No default decoder is replaced.
+
 ## `DecodeResult`
 
 `DecodeResult` is a dataclass with:

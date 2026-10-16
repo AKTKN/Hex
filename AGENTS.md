@@ -766,3 +766,41 @@ H4 has not started.** Read [the H3 guide](docs/logical_zero_factory_h3.md).
   guards, scalar/batch equality, setup counts and causal-score isolation.
   Projected priors, `create_codecapacity_dem`, cuts/retries and benchmark
   output remain later work; no paper, posterior or fault-tolerance claim.
+
+## Auxiliary-system H4 checkpoint
+
+H4 was explicitly requested on 2026-10-16 after H3. Earlier phase-absence
+statements are historical. **Stop after H4 commit/push; H5 has not started.**
+Read [the H4 guide](docs/logical_zero_factory_h4.md) for APIs and measured limits.
+
+- `hex_qec.decoders.codecapacity_dem` now supplies `ProjectedDEMBuilder`,
+  immutable complete-signature/mechanism/model/result/convention diagnostics,
+  `merge_independent_events` and `UnsupportedProjectedModel`; public exports
+  also live in `hex_qec.decoders`.
+- The bundle supplies full circuit, code/observable, causal stage/preparation/
+  readout ledgers and cached native prep plans. Stage j uses the whole relevant
+  initialization-to-readout prefix, never the oracle/future records. The
+  `FactoryBatchDecoder.decode_stage_input` boundary reuses actual prep repair
+  and existing Hamming prefix frames without scoring or terminal evaluation.
+- Priors are named `circuit_informed_projected`, specifically single-fault
+  responses at a noiseless reference with independent superposition. Keep raw
+  signed and prep-resolved signatures/provenance separate. They are not exact
+  conditional or intrinsic-randomness-marginal priors: plus-SE physical-context
+  mismatches and nonlinear two-fault counterexamples are measured in TEST/STATUS.
+- X/Y/Z and independent-generator factorizations of DEPOLARIZE1/2 are supported.
+  Preserve original gate p and generator q. Exclusive Pauli branches are not
+  independent p/15 events. Zero-probability instructions are counted/skipped;
+  impossible histories must not be decoded at p=0. Unknown noise fails clearly.
+- Only identical COMPLETE detector/logical signatures XOR-merge. Preserve
+  no-ops, logical-only terms and all nonzero mechanisms. Online H has only
+  final check rows; event columns are not data-qubit columns. Reject unsupported
+  hyperedges, logical-only mechanisms, q/weight/topology/potential before
+  matching. p=0 returns an inspectable empty prior and explicit Hamming request
+  for finite-weight decoding, with no silent fallback or clipping.
+- Build/inspect/compile caches are per complete case/stage/worker. Actual prep
+  graph weights/maps and conventions enter hashes. Bounded setup chunks limit
+  dense record storage; no per-physical-shot simulator/decoder/graph creation
+  or reweighting. Do not mutate source native plans after builder construction.
+- Default factory/full Knill sampling, Hamming priors and result semantics are
+  unchanged. H4 does not add `create_codecapacity_dem`, conditional priors,
+  retry/threshold paths, YAML/Parquet output or a performance/paper/FT claim.

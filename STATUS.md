@@ -1007,3 +1007,102 @@ YAML/Parquet runner, full suite, large Monte Carlo, speed benchmark, general
 fault-tolerance proof or paper reproduction was implemented/run. Scientific
 specification bytes, legacy physical circuits/decoders and parent user changes
 are untouched. Commit/push outcome is reported in the H3 handoff.
+
+## Auxiliary-system H4 projected factory priors
+
+Date: **2026-10-16 (Asia/Tokyo)**. H4 was separately requested after H3.
+Base: `9e5fce5cc5dba1e4c5bfaea84a02a7545892d419`, clean tracked
+`auxiliary-system`. Fetch succeeded, refs matched and Hex's historical
+`hex-adaptive` lineage/worktrees/remotes were inspected. No reset/stash,
+dependency installation, branch replacement or bench change occurred.
+The H0/H3 Python/native environment is unchanged; no new dependency is needed.
+
+### Implemented scope
+
+- `decoders/codecapacity_dem.py`: opt-in `ProjectedDEMBuilder` accepting the
+  full factory bundle (noisy circuit, preparation/stage/readout ledger,
+  code/observable, actual prep decoders/frame convention). It records all
+  nonzero independent mechanisms, original probabilities/locations, raw signed
+  and reference-resolved complete signatures, and immutable merged event
+  models/results/diagnostics. Source reset, SE, CNOT and destructive-readout
+  faults include both blocks and all causally relevant earlier stages.
+- Single-fault deterministic propagation and actual prep decoding use only
+  the initialization-to-stage-readout prefix. Canonical reset maps erase both
+  components without changing physical circuits. Independent generator
+  factorization of DEPOLARIZE1/2 avoids misidentifying exclusive Pauli branches
+  as independent p/15 events. Supported noise is explicit; unmatched/unknown
+  terms are never silently discarded.
+- `FactoryBatchDecoder.decode_stage_input` exposes interpreted target records
+  on exactly that stage's prefix before current online recovery. It shares
+  the existing frame processor, with gap/oracle/terminal evaluation disabled.
+  The default full decode/sample path remains unchanged.
+- Complete signatures XOR-merge; differing logical labels remain distinct.
+  No-op and logical-only mechanisms retain provenance/diagnostics. Online H
+  has only m_z rows; preparation history is not appended. Natural log weights
+  use `log1p(-q)-log(q)`. Validated H3 graphs are cached per stage; unsupported
+  active models raise, with `inspect` retaining model/diagnostics. Zero noise
+  is an empty prior and an explicit finite-Hamming request on compilation.
+- Hashes include full/prefix circuit, actual prep graph weights and sparse
+  maps, code/ledger/depth/noise/stages, conventions/version and reference/model.
+  Setup chunks bound dense storage by `fault_batch_size * prefix_measurements`;
+  compiled handles/results are reused, without per-shot constructions or
+  mutable weights. A new guide and affected package/test docs describe scope.
+
+### Validation and measured limitations
+
+Initial H4 run: **2 failed, 29 passed**, eight warnings, **14.26 s**.
+The plus-SE paired physical test disproved the initial test's universal
+reference-logical-response assumption. This is a real approximation limit,
+not a bug hidden by dropping the mechanism. The test now requires exact raw
+physical propagation, the correct syndrome and explicitly characterizes the
+logical mismatch. The zero-noise test also exposed attempted inference of
+impossible q=0 faults on prep DEM graphs with no edges; zero-q instructions
+are now counted without submitting hypothetical records to those decoders.
+
+For d=3, p=0.001, depths `(2,2)`, T=2: stage 0 retains **1,666 mechanisms**,
+stage 1 **2,571**; each has nine active complete signatures plus one no-op
+event and passes H3's lift. Raw-vs-prep-resolved signatures differ on **375**
+and **280** mechanisms respectively. Raw signed check marginals independently
+match Stim's full-prefix DEM within **3.7e-15** in the probe.
+
+The plus-SE `Z30` fault at instruction 257 / mechanism 1518 has raw `(D0,())`
+and reference-resolved `(D0,L0)` signature. Across 16 paired physical states
+at seed 341, its syndrome remains D0 and raw flip maps match exactly, but
+**13/16 logical responses differ from the reference** (three agree). Initial-A
+reset X faults individually have zero reference response, yet **18/36 pairs**
+give logical-only responses after offline repair. These are real context and
+nonlinear multi-fault limits. The model is explicitly a fixed-reference
+single-fault approximation, not a certified first-order marginal averaged
+over intrinsic preparation randomness or an exact conditional posterior.
+
+Subsequent H4 subset: **32 passed**, eight warnings, **14.74 s**. Targeted
+H4/H3/H2/H1/legacy run before bounded setup chunks: **182 passed**, two
+deselected, eight warnings, **41.73 s**. With chunk partition coverage, the
+isolated H4 subset passed **35 tests** in **18.37 s**. Final targeted run
+including unsupported-model inspection: **184 passed**, two deselected,
+eight warnings, **40.77 s** (36 H4, 37 H3, 34 H2, 41 H1, 36 legacy).
+Exact commands/follow-up checks are in [TEST.md](TEST.md#auxiliary-system-h4-projected-factory-priors).
+
+Tests cover paired physical reset/SE/CNOT/readout faults, independent raw DEM
+probabilities, full signatures/XOR combinations, numeric/log weights, zero
+noise, future/oracle exclusion, third-stage reset reuse, invalid model/noise/
+conventions, actual prep-weight hash changes, bounded chunks and cache reuse.
+Weighted/Hamming comparisons share 32 saved physical samples, with exact
+weighted minima checked on the nine-event model. No improvement claim is made.
+Default H3 raw samples and every result field remain bit-identical against
+the prior source at d=3 T=1/2/3. Imports, compilation and documentation integrity
+passed as detailed in TEST.md. New physical batches use <=32 shots; model
+setup lanes/classical enumeration are not physical Monte Carlo shots.
+
+### Limits and next boundary
+
+**H5 has not started.** No full-Knill/public `create_codecapacity_dem` option,
+default prior change, exact marginal/conditional model, threshold/retry path,
+experiment output, full suite, large Monte Carlo, speed claim, paper reproduction
+or fault-tolerance proof was implemented/run. Later-stage priors keep Hamming
+prefix recovery fixed; a different earlier policy needs separate validation.
+H3 numeric/graph restrictions remain in force. Setup time still scales with
+mechanisms and prefix size, despite bounded memory. Native handles remain
+worker-local/synchronous and source plans must not be mutated afterward.
+Scientific specification bytes, legacy physical/decoder code and parent user
+changes are untouched. The H4 commit/push outcome belongs to its handoff.

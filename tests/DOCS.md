@@ -13,6 +13,7 @@ contains Python modules but has no `__init__.py`. Historical executions are in
 | `test_factory_circuit.py` | H1 signed circuit/ledger, preparation frames, oracle isolation, single faults, exact legacy map comparisons |
 | `test_factory_batch.py` | H2 reused-support refreshes, causal batches, terminal labels, replay in both Pauli bases, cache lifetimes |
 | `test_surface_gap.py` | H3 exhaustive sector minima, graph/weight guards, native batching, causal factory gaps |
+| `test_codecapacity_dem.py` | H4 physical fault projection, complete events, conditional-model counterexamples, cache and rejection |
 | `test_phase1_decoder_adapters.py` | Batch/scalar dtype compatibility, decoder factories, rich results, module normalization |
 | `test_phase2_results.py` | Aggregate wrappers, legacy tuple compatibility, detail-level validation |
 | `test_phase3_stateful_backend.py` | Measurement axes/reconstruction, fixed endpoints, small statistical comparisons |
@@ -130,3 +131,36 @@ and 15 setup matching objects, preserving all prior frame/label comparisons.
 Saved-record probes against the H2 decoder also preserve every operational
 field and terminal label. No H4 algorithm, full suite, sweep, performance
 benchmark or general fault-tolerance claim is included.
+
+## H4 projected-prior validation
+
+The final targeted H4/H3/H2/H1/legacy command passes **184 tests**, two inherited
+statistical cases deselected, eight existing warnings, **40.77 s**. It includes
+all **36 H4 tests**. The preceding isolated H4 subset passed 35 tests in
+18.37 s before the additional unsupported-model inspection case. Initial
+failures, exact commands and probes are in
+[TEST.md](../TEST.md#auxiliary-system-h4-projected-factory-priors).
+
+New tests preserve every nonzero mechanism and complete signature, validate
+online-only dimensions, XOR merging, independent depolarizing factorization,
+natural-log weights, zero-noise handling, noise/graph/topology/degenerate-prior
+rejection, actual prep-weight hashes, cache identity and bounded lane storage.
+Stage 0/1/2 prefixes cover refresh reuse, future/oracle isolation and no sampling
+or terminal-truth calls during construction. Weighted and Hamming comparisons
+use the same saved 32 physical shots; weighted sector minima match enumeration
+of the nine-event d=3 fixture. Constructor gates forbid new objects after setup.
+
+Independent physical paired-state tests use 16 shots per reset/SE/CNOT/readout
+case and verify deterministic raw flip propagation. Seven cases also match the
+reference's complete prep-resolved signature. The plus-SE case instead
+explicitly preserves a real logical-response mismatch (13/16 records at the
+recorded seed), while its corrected syndrome agrees. Raw signed marginals
+match Stim's independent DEM to about 4e-15; they still differ from actual prep
+repair for 375/1,666 and 280/2,571 reference mechanisms. A separate 36-pair
+controlled test exhibits nonlinear double-fault responses, demonstrating why
+the model cannot be advertised as an exact conditional or intrinsic marginal.
+Controlled setup lanes/classical enumeration are not Monte Carlo shots.
+
+Default H3 samples, every result field, frames and labels match the previous
+decoder exactly on saved d=3 T=1/2/3 records. No H5 flag, large sweep, full-suite
+execution, experiment output or validated LER-improvement claim is included.

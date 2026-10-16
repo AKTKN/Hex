@@ -111,4 +111,23 @@ The metric compares sector minima in a spatial independent-edge model, not
 posterior sums or an exact circuit-conditioned probability after nonlinear
 prep repair. No threshold decision changes physical sampling. See
 [the H3 guide](../../../docs/logical_zero_factory_h3.md) for the lift,
-standalone result, native precision and tested limits. H4 has not started.
+standalone result, native precision and tested limits.
+
+## H4 causal stage-input boundary
+
+`FactoryBatchDecoder.decode_stage_input(records, stage_index)` returns
+interpreted `(shots,n) bool` target Z records before that stage's online
+recovery. It requires a nonempty binary batch of exactly that stage's prefix
+width and a valid chronological index. It reuses the existing prep/frame loop
+and Hamming recovery on earlier stages, without gap evaluation or terminal
+oracle/labels. Full `decode` and `decode_operational` retain their previous
+shape, meaning and results; default sampling/scoring remains Hamming.
+
+The H4 [projected-prior builder](../../../docs/logical_zero_factory_h4.md)
+uses this boundary only during model setup on controlled noiseless-reference
+fault records, never on hidden fault truth from actual shots. Priors, graphs
+and diagnostics live in the decoder package, separately cached per complete
+case/stage. Its fixed-reference approximation is not an exact conditional
+model: observed prep-context and nonlinear multi-fault mismatches are recorded
+in the H4 guide/STATUS. No public full-Knill option, simulator feedback,
+postselection, filesystem output or H5 work is introduced.

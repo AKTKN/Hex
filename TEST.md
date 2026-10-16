@@ -1291,3 +1291,100 @@ installed through PyMatching; its direct TOML requirement needs no install.
 
 No H4 prior model, threshold selection, full suite, large Monte Carlo, speed
 benchmark, general fault-tolerance proof or paper reproduction was run.
+
+## Auxiliary-system H4 projected factory priors
+
+Date: 2026-10-16 (Asia/Tokyo); branch `auxiliary-system`, base `9e5fce5c`.
+No environment/dependency changes. All commands ran from the Hex worktree.
+
+1. Setup probes inspected full factory noise/stage ledgers and installed
+   Stim 1.15.0 deterministic flip/paired-copy APIs, with official versioned
+   error-analyzer/gate references. d=3, depths `(2,2)`, p=0.001, T=2 produced
+   1,666 / 2,571 controlled mechanisms at stage 0/1. The final canonical-reset
+   model has nine active complete signatures plus one no-op event per stage,
+   raw-vs-resolved mismatches 375/280, and valid H3 lifts. Independent raw
+   signed detector marginals agreed with Stim's prefix DEM to <=3.7e-15.
+
+2. `PYTHONPATH=src python -m pytest -q tests/test_codecapacity_dem.py`
+
+   Initial result: **2 failed, 29 passed**, eight warnings, **14.26 s**.
+   The plus-SE paired-state test found a genuine context-dependent logical
+   response: Z30 at instruction 257, mechanism 1518, has reference `(D0,L0)`
+   but 13/16 physical prep contexts have a different logical response at
+   seed 341. Raw flip maps are identical and syndrome D0 agrees, so the
+   fixed-reference projection cannot be called an exact conditional/marginal
+   model. The test now explicitly characterizes the mismatch, retaining exact
+   propagation/syndrome checks and seven other full-signature comparisons.
+   It does not assert that the scientific mismatch was eliminated.
+
+   The p=0 failure attempted to decode impossible q=0 faults against empty
+   prep DEM graphs. Zero-probability instructions are now counted without
+   inferring their nonexistent responses; no positive mechanism is dropped.
+   Follow-up after that fix and stage-2 coverage: **32 passed**, eight
+   warnings, **14.74 s**.
+
+3. Targeted regression command:
+
+   ```bash
+   PYTHONPATH=src python -m pytest -q \
+     tests/test_codecapacity_dem.py \
+     tests/test_surface_gap.py \
+     tests/test_factory_batch.py \
+     tests/test_factory_circuit.py \
+     tests/test_phase1_decoder_adapters.py \
+     tests/test_phase2_results.py \
+     tests/test_phase4_adaptive_state_prep.py \
+     tests/test_phase3_stateful_backend.py \
+     tests/test_phase5_confidence_adaptive.py::test_fixed_knill_surface_code_keyword_is_backward_compatible \
+     -k 'not ler_is_statistically_compatible'
+   ```
+
+   PASS after actual prep-weight/validation/underflow guards: **182 passed**,
+   two inherited statistical-LER tests deselected, eight existing dependency
+   warnings, **41.73 s**. After bounded setup chunks and partition coverage,
+   command 2 passed **35 tests**, eight warnings, **18.37 s**. Final command 3
+   with unsupported active-model inspection: **184 passed**, **2 deselected**,
+   **8 warnings**, **40.77 s** (36 H4 + 148 previous targeted tests).
+
+   Physical tests use 16 paired shots for reset/SE/CNOT/readout cases and 32
+   saved shots for weighted/Hamming comparison. Controlled model lanes and
+   classical 2^9 event enumeration are not physical Monte Carlo shots.
+   Tests cover full mechanism/provenance retention, complete-signature XOR
+   merging, independent depolarizing factorization, natural log weights,
+   unsupported noise/graphs/logical-only/degenerate probabilities, zero noise,
+   causal prefix/oracle/future isolation, third-stage reuse, exact cache hashes,
+   changed native prep weights, bounded chunk identity and post-setup reuse.
+
+4. Additional model-accuracy probe/test: all nine individual initial-A reset
+   X faults have zero effective response at the reference, but **18/36**
+   two-fault combinations produce logical-only responses after prep decoding.
+   The test requires a nonzero counterexample; it does not declare independent
+   superposition exact. This is a measured O(p^2) limit in addition to the
+   single-fault preparation-context limit above.
+
+5. H3 compatibility probe loaded
+   `git show HEAD:src/hex_qec/simulation/factory.py` into a separate module.
+   PASS: identical seeded raw samples and every factory result field for
+   d=3, depths `(2,2)`, `(T,p)=(1,0),(2,0.002),(3,0.02)`, seed 751, 32 shots.
+   Public default Knill signatures/paths and all physical builders are unchanged.
+
+6. Final export-preservation assertions use:
+
+   ```bash
+   PYTHONPATH=src python -m pytest -q \
+     tests/test_codecapacity_dem.py::test_all_mechanisms_preserved_and_only_final_online_checks \
+     tests/test_codecapacity_dem.py::test_graph_hyperedge_and_logical_only_rejection_without_matching
+   ```
+
+   PASS: **6 passed**, eight warnings, **6.80 s**. Cases retain no-op error instructions and logical-only error
+   targets explicitly (not merely the declared L0), without unsupported
+   matching construction. This adds no new model/physical behavior.
+
+7. `python -m compileall -q src tests`, `git diff --check`, fresh prior-first
+   and factory-first imports passed. Documentation integrity verifies changed
+   local Markdown links/anchors, module DOCS coverage, unchanged historical
+   AGENTS/STATUS/TEST prefixes and byte-identical supplied scientific spec.
+   Parent bench status is unchanged; no experiment outputs are generated.
+
+No H5 option, full pytest suite, large Monte Carlo, performance sweep, exact
+conditional/marginal-model claim, LER-improvement claim or paper reproduction.

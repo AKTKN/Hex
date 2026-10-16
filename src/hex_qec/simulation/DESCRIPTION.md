@@ -12,6 +12,11 @@ H3 fills `FactoryBatchResult.gaps` with causal `(shots,T) float64` Hamming
 sector scores and adds `gap_units`, while preserving the other H2 fields;
 see [DOCS.md](DOCS.md#h3-causal-stage-scores). The score graph is cached
 separately from recovery and terminal evaluation, without threshold branching.
+H4 adds `FactoryBatchDecoder.decode_stage_input(records,stage_index)` to
+reuse that causal loop on exactly one operational prefix before current
+recovery, without gaps or terminal truth. The separate projected-prior
+builder uses it at setup; default sampling/results are unchanged. See
+[DOCS.md](DOCS.md#h4-causal-stage-input-boundary).
 
 ## Opt-in wall-time instrumentation
 

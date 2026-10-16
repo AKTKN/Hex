@@ -11,6 +11,12 @@ from .adapters import (
 )
 from .aggregators import all_components_max_confidence, dem_only_max_confidence
 from .surface_gap import HomologyGapBatch, SurfaceMWPMHomologyGap
+from .codecapacity_dem import (
+    FaultMechanism, FaultSignature, PreparationDecoderConvention,
+    ProjectedDEMBuilder, ProjectedDEMDiagnostics, ProjectedDEMResult,
+    ProjectedErrorModel, ProjectedEvent, ProjectedFault,
+    UnsupportedProjectedModel, merge_independent_events,
+)
 
 __all__ = [
     "CSSInnerDecodeResults",
@@ -27,4 +33,8 @@ __all__ = [
     "all_components_max_confidence",
     "HomologyGapBatch",
     "SurfaceMWPMHomologyGap",
+    "FaultMechanism", "FaultSignature", "PreparationDecoderConvention",
+    "ProjectedDEMBuilder", "ProjectedDEMDiagnostics", "ProjectedDEMResult",
+    "ProjectedErrorModel", "ProjectedEvent", "ProjectedFault",
+    "UnsupportedProjectedModel", "merge_independent_events",
 ]

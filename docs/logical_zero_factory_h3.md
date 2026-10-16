@@ -1,5 +1,9 @@
 # H3: surface MWPM homology-sector gap
 
+This records the H3 checkpoint. [H4](logical_zero_factory_h4.md) now provides
+an explicit projected-prior builder with measured limitations; the factory's
+default Hamming scoring described here remains unchanged.
+
 H3 supplies `SurfaceMWPMHomologyGap` and adds causal per-stage `float64`
 `gaps[shot,stage]` to the [H2 factory result](logical_zero_factory_h2.md).
 The implemented score is a min-sum sector difference in a spatial
