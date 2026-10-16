@@ -1,8 +1,8 @@
 # Hex package and auxiliary factory
 
 Audited source: `5de58f2f80791054411ad3c0885a4fe3671ed56a` (`hex-adaptive`).
-H0 added documentation on `auxiliary-system`; H1 through H4 add an independent factory
-primitive and batched execution without changing legacy circuit/decoder paths. The package-root
+H0 added documentation on `auxiliary-system`; H1 through H5 add an independent factory
+primitive and batched execution with optional projected decoding and preserved legacy defaults. The package-root
 `__init__.py` is empty; import APIs from the child packages.
 
 ## Implemented today
@@ -34,7 +34,7 @@ depolarization. No separate idle/gate-duration model is supplied. See
 [tests/DOCS.md](../../tests/DOCS.md) for current versions, checks, and source
 limitations; older detailed descriptions are linked from each child guide.
 
-## H4 factory and remaining proposals
+## Factory APIs and remaining proposals
 
 `FactoryCircuitBuilder(RotatedSurfaceCodeAdapter(d), PreparationPlan(r_0,
 r_plus), physical_error=p, T_tel=T).build()` returns `FactoryCircuitBundle`.
@@ -68,8 +68,8 @@ prep-frame contracts are implemented in H1. `CompiledFactory`,
 `FactoryBatchDecoder`, `FactoryOperationalBatch`, `FactoryBatchResult`, and
 `FactoryCacheKey` are implemented in H2. H3 validates the spatial two-boundary
 gap against exhaustive d=3 enumeration. H4 implements a named projected-prior
-approximation; exact conditional priors and H5 public options remain future
-targets. Circuit
+approximation; H5 exposes optional public decoding under its validity checks.
+Exact conditional priors remain future targets. Circuit
 building, signed-frame processing, decoding, and analysis must remain distinct;
 surface-specific graph assumptions belong in a surface adapter. Hex must not
 gain YAML, Parquet, or filesystem experiment runners for this extension.
@@ -78,3 +78,21 @@ Stage decodes read only causally available operational records.
 The factory's final ideal Z oracle is evaluation-only; full Knill retains noisy
 final readout. No oracle/fault truth may enter recovery, confidence, priors, or
 resource certification. See [AGENTS.md](../../AGENTS.md#auxiliary-system-development-contract-h0).
+
+## H5 public options and audit
+
+`CompiledFactory.from_bundle(bundle, *, seed=None, create_codecapacity_dem=False)`
+and `FactoryBatchDecoder(bundle, *, create_codecapacity_dem=False)` expose the
+factory policy. Fixed `knill_online_offline(..., *, create_codecapacity_dem=False)`
+exposes both Bell sectors. False preserves prior behavior; True uses cached
+full-prefix projected models, event-sector inference and log-weight gaps.
+`hex_qec.decoders.OnlineMeasurementContext` and `EffectivePriorBuilder` share
+H4's projection and strict H3 validity checks across these paths. No silent
+fallback or discarded logical mechanism is permitted. Fig. 4(d) uses False.
+
+See [the H5 guide](../../docs/logical_zero_factory_h5.md) for stable imports,
+all signatures/shapes, actual tested cases, unsupported d=3 full-Knill two/
+three-round X sectors, zero-noise behavior, numeric/cache conventions and
+scientific limits. The whole fast repository selection passed 261 tests;
+[TEST.md](../../TEST.md#auxiliary-system-h5-public-options-and-whole-implementation-audit)
+records the exact command and two intentionally excluded statistical cases.

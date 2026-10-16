@@ -149,8 +149,7 @@ single-fault/noiseless-reference approximation, prep convention, graphlike /
 lift-valid flags, diagnostics, batch size and full/prefix/config/reference/model
 hashes. Configuration includes actual prep weights/maps and native versions.
 Construct/cache synchronously per worker; no shot-dependent priors, graphs or
-weights are created. Default factory/full Knill paths are unchanged; H5's
-`create_codecapacity_dem` flag is absent.
+weights are created. H4's default prior API remains available; H5 adds the public flag below.
 
 The approximation has observed limits: raw vs prep-resolved signatures differ
 for 375/1,666 and 280/2,571 mechanisms in the d=3 two-stage fixture. A plus
@@ -159,3 +158,26 @@ physical records, and two-fault responses can be nonlinear. These are retained
 limitations, not exact marginal/conditional priors or validated LER gains.
 See [the H4 guide](../../../docs/logical_zero_factory_h4.md) for exact equations,
 API usage, scope/caching semantics, counters and test evidence.
+
+## H5 shared effective priors
+
+`OnlineMeasurementContext` is a frozen sector boundary carrying the entire
+causal physical prefix, code H/L, all mechanisms, raw parities, actual
+pre-recovery interpreter and configuration/convention identity.
+`EffectivePriorBuilder(context, *, fault_batch_size=1024)` provides cached
+`inspect()`, strict `build()` and `compile_gap()` using H4's single-fault
+algorithm and H3's complete validation. `ProjectedDEMResult.sector` defaults
+to "z" for H4 compatibility. Factory and both full-Knill Bell sectors use
+the same service. `ProjectedDEMBuilder.context(j)` exposes the default Hamming
+prefix or an explicitly identified alternative; cache hits never re-enumerate.
+
+True public paths use the sector best class to correct the raw logical parity;
+event-column corrections cannot be treated as data-position corrections.
+Gap units are `log_weight`. Full Knill's X/Z marginals retain joint mechanism
+provenance but do not perform joint correlated inference. Supported/rejected
+fixtures, p=0 explicit Hamming request, actual policy/native-weight/map hashes,
+rounding limits and callback responsibilities are in
+[the H5 guide](../../../docs/logical_zero_factory_h5.md). That guide also
+explains why observed prep-context/nonlinear responses prevent exact marginal,
+conditional-posterior or LER-gain claims. The fast repository selection passes
+261 tests; larger statistical cases are intentionally excluded.

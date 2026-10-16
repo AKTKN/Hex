@@ -804,3 +804,52 @@ Read [the H4 guide](docs/logical_zero_factory_h4.md) for APIs and measured limit
 - Default factory/full Knill sampling, Hamming priors and result semantics are
   unchanged. H4 does not add `create_codecapacity_dem`, conditional priors,
   retry/threshold paths, YAML/Parquet output or a performance/paper/FT claim.
+
+
+## Auxiliary-system H5 checkpoint
+
+H5 was explicitly requested on 2026-10-16 after H4, together with a whole
+implementation validity review. Earlier phase stop/absence statements are
+historical. Stop after the H5 commit/push; no bench B0 or experiment sweep is
+authorized by this phase. Read [the H5 guide](docs/logical_zero_factory_h5.md).
+
+- Public fixed Knill, Bell gadget and compiled factory/decoder APIs expose
+  keyword-only `create_codecapacity_dem: bool = False`. Preserve every old
+  positional argument and False-mode circuits/noise/seeds/labels. Fig. 4(d)
+  reproduction convention is False. Adaptive Knill is unchanged.
+- `OnlineMeasurementContext` and `EffectivePriorBuilder` are public decoder
+  contracts. H4 factory projection and both full-Knill Bell sectors share the
+  same controlled-fault algorithm, complete-signature merge, natural-log
+  weights and strict H3 lift. Do not implement a Bell-local backward model
+  without complete preparation/coupling/readout context.
+- True factory stages build chronologically using actual earlier projected
+  recoveries and their complete hashes; H4 standalone remains Hamming-prefix.
+  Do not silently reuse the Hamming-prefix convention for another policy.
+- Projected corrections index events, not data qubits. XOR the selected error
+  class with raw logical parity; full Knill returns logical Z then X feed-
+  forward bits. Factory shapes remain unchanged; True gaps use `log_weight`.
+  Keep Hamming and log-weight thresholds distinct. Exact sector ties choose 0.
+- Full Knill True is tested at d=3, p=.001, one teleportation and one SE round,
+  both bases/sectors. d=3 two/three SE-round X sectors retain invisible logical
+  terms and raise UnsupportedProjectedModel. Do not discard terms or fall
+  back silently. p=0 True requests the explicit finite Hamming baseline.
+  Two marginal sectors do not exploit joint X/Z correlations.
+- Full Knill's final readout remains noisy; factory's sole final ideal oracle
+  is evaluation-only. No actual physical fault truth, future records or final
+  labels enter model/inference. Built-in contexts enforce prefix boundaries;
+  external callbacks must supply faithful complete context/identity.
+- Cache native graphs, sampler, prep converters/maps and prior results per
+  worker. True Knill enables shared prep converters; False callbacks preserve
+  their legacy behavior. Cache hits must not re-enumerate faults. Source plans
+  and native handles must stay fixed and synchronous after setup.
+- The final fast repository selection passes 261 tests, two inherited larger
+  statistical cases excluded. It includes 16 H5 tests, with an additional two-teleportation prefix case.
+  Exact commands/failures/versions are in TEST.md. Golden False regressions
+  come from isolated H4 source and compare circuits/raw records/corrections/
+  shot labels at fixed seeds, with version-scoped native hashes.
+- Whole-implementation assessment is valid within tested software/model
+  domains, not a physical-prior accuracy certificate. Preserve H4's 13/16
+  plus-SE logical-context mismatch and 18/36 nonlinear reset-pair cases. No
+  exact marginal/conditional likelihood, posterior confidence, LER improvement,
+  speedup, threshold, paper reproduction or general FT claim is established.
+  No bench files, YAML/Parquet integration or experiment outputs are added.

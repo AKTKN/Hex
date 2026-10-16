@@ -3,11 +3,14 @@
 The `auxiliary-system` branch also provides a logical-zero factory with
 fixed multi-stage two-block reuse, compiled batch sampling, causal Pauli-frame
 decoding, terminal evaluation labels, and per-stage surface MWPM logical gaps.
-H4 adds an explicit [projected-prior builder](docs/logical_zero_factory_h4.md)
-with documented approximation limits, preserving default execution. See
+H5 exposes optional circuit-informed projected decoding for fixed Knill EC
+and compiled factories, with False preserving legacy behavior. See
+[the public API and whole-implementation audit](docs/logical_zero_factory_h5.md)
+for supported cases, explicit unsupported-model errors and scientific limits;
+[the projected-prior guide](docs/logical_zero_factory_h4.md),
 [the gap guide](docs/logical_zero_factory_h3.md) and
-[the execution guide](docs/logical_zero_factory_h2.md) for usage,
-noise/oracle conventions, tested boundaries, and the remaining H5+ work.
+[the execution guide](docs/logical_zero_factory_h2.md) describe the underlying
+contracts. Fig. 4(d) reproduction uses `create_codecapacity_dem=False`.
 ### Note: This repository is modified version of https://github.com/ewanmurphy/Hex. 
 `hex_qec` is a Python tool for building fault-tolerant quantum error-correction protocols from reusable circuit modules.
 

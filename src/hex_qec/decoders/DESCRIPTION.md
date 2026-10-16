@@ -237,3 +237,16 @@ confidence from a legacy decoder, and it does not adapt decoders that expose
 neither `decode_batch` nor `decode`. DEM probabilities and code-capacity
 probabilities represent different variable sets; the adapter does not derive
 circuit-effective code-capacity priors.
+
+
+## H5 public projected-decoding checkpoint
+
+H5 exposes optional `create_codecapacity_dem=False` on fixed Knill and factory
+execution. The shared full-prefix context/service preserves legacy False
+behavior and enforces H4/H3 validity for True. Full Knill supports both sectors
+in its small one-round d=3 fixture; logical-only models (including tested two/
+three-round X sectors) raise explicitly. Cached callbacks/graphs remain
+worker-local; no final oracle or hidden fault truth enters inference.
+[The H5 guide](../../../docs/logical_zero_factory_h5.md) documents stable
+imports, exact interfaces/shapes/equations, hashes, reuse, tested scope and
+scientific/numerical limits. Earlier phase descriptions are historical.

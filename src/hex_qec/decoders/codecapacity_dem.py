@@ -1,4 +1,4 @@
-"""Circuit-informed single-fault priors for a causal factory stage.
+"""Circuit-informed single-fault priors for causal factory and Bell sectors.
 
 Controlled model faults are propagated through the physical prefix and its
 actual preparation decoder at one noiseless reference. Nonlinear repair makes
@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 import hashlib
 from itertools import product
 from numbers import Integral
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Callable, Iterable
 
 import numpy as np
 import pymatching
@@ -211,6 +211,7 @@ class ProjectedDEMResult:
     approximation: str = _APPROXIMATION
     weight_units: str = "log_weight"
     projection_batch_size: int = 1024
+    sector: str = "z"
 
 
 def _digest(value: object) -> str:
@@ -233,8 +234,13 @@ def _enumerate_faults(bundle: FactoryCircuitBundle, stage_index: int) -> tuple[F
     stage = bundle.stages[stage_index]
     regions = [(s.index, r) for s in bundle.stages[:stage_index + 1]
                for r in (*s.preparations, s.coupling, s.measurement)]
+    return _enumerate_prefix_faults(bundle.circuit[:stage.measurement.instructions.stop],
+                                   tuple((s, r.name, r.instructions.start, r.instructions.stop) for s, r in regions))
+
+
+def _enumerate_prefix_faults(circuit: stim.Circuit, regions: tuple[tuple[int, str, int, int], ...]) -> tuple[FaultMechanism, ...]:
     faults = []
-    for index, instruction in enumerate(bundle.circuit[:stage.measurement.instructions.stop]):
+    for index, instruction in enumerate(circuit):
         if isinstance(instruction, stim.CircuitRepeatBlock):
             raise ValueError("projected factory requires a flat stage-aware circuit")
         gate = stim.gate_data(instruction.name)
@@ -245,7 +251,7 @@ def _enumerate_faults(bundle: FactoryCircuitBundle, stage_index: int) -> tuple[F
             continue
         if instruction.name not in {"X_ERROR", "Y_ERROR", "Z_ERROR", "DEPOLARIZE1", "DEPOLARIZE2"}:
             raise ValueError(f"unsupported noise mechanism {instruction.name}; no terms were discarded")
-        owner = next(((s, r.name) for s, r in regions if r.instructions.start <= index < r.instructions.stop), None)
+        owner = next(((s, name) for s, name, start, stop in regions if start <= index < stop), None)
         if owner is None:
             raise ValueError("noise mechanism has no stage/preparation ledger owner")
         p = args[0]
@@ -283,11 +289,11 @@ def _propagate_faults(circuit: stim.Circuit, faults: tuple[FaultMechanism, ...])
         simulator.do(fragment.without_noise())
         # Canonicalize erased, unobservable components after reset. These
         # sentinels change only deterministic maps, never the sampled circuit.
-        if instruction.name in {"R", "RX", "MR"}:
+        if instruction.name in {"R", "RX", "MR", "MRX"}:
             targets = [target.value for target in instruction.targets_copy()]
             reset = stim.Circuit()
-            reset.append("R" if instruction.name == "RX" else "RX", targets)
-            reset.append("RX" if instruction.name == "RX" else "R", targets)
+            reset.append("R" if instruction.name in {"RX", "MRX"} else "RX", targets)
+            reset.append("RX" if instruction.name in {"RX", "MRX"} else "R", targets)
             simulator.do(reset)
         for lane, fault in locations.get(index, ()):
             for qubit, pauli in fault.paulis:
@@ -298,6 +304,129 @@ def _propagate_faults(circuit: stim.Circuit, faults: tuple[FaultMechanism, ...])
 def _signatures(syndromes: np.ndarray, logical: np.ndarray) -> tuple[FaultSignature, ...]:
     return tuple(FaultSignature(tuple(np.flatnonzero(row)), (0,) if bit else ())
                  for row, bit in zip(syndromes, logical))
+
+
+@dataclass(frozen=True)
+class OnlineMeasurementContext:
+    """One causal sector, including its complete preparation/readout prefix.
+
+    interpret maps prefix records to pre-recovery data-position readouts.
+    configuration_sha256 must identify the actual preparation and earlier
+    recovery policies/maps, not merely their names. No oracle is accepted by
+    the built-in context producers. Callbacks/native handles are worker-local.
+    """
+
+    circuit: stim.Circuit
+    stage_id: int
+    sector: str
+    check_matrix: sparse.csc_matrix
+    logical: np.ndarray
+    interpret: Callable[[np.ndarray], np.ndarray]
+    mechanisms: tuple[FaultMechanism, ...]
+    raw_checks: tuple[tuple[int, ...], ...]
+    raw_logical: tuple[int, ...]
+    configuration_sha256: str
+    circuit_sha256: str
+    convention: PreparationDecoderConvention
+
+    def __post_init__(self):
+        h = sparse.csc_matrix(self.check_matrix, copy=True)
+        logical = np.asarray(self.logical).copy()
+        if (h.ndim != 2 or min(h.shape) < 1 or logical.shape != (h.shape[1],)
+                or not np.all((h.data == 0) | (h.data == 1))
+                or not np.all((logical == 0) | (logical == 1))):
+            raise ValueError("online context needs binary H and exactly one logical row")
+        if self.sector not in {"x", "z"} or len(self.raw_checks) != h.shape[0]:
+            raise ValueError("online context sector/check dimensions disagree")
+        circuit = self.circuit.copy()
+        if any(not 0 <= r < circuit.num_measurements for row in (*self.raw_checks, self.raw_logical) for r in row):
+            raise ValueError("online context parity refers outside its causal prefix")
+        if any(not 0 <= f.instruction_index < len(circuit) for f in self.mechanisms):
+            raise ValueError("online context mechanism lies outside its causal prefix")
+        object.__setattr__(self, "circuit", circuit)
+        object.__setattr__(self, "check_matrix", h.astype(np.uint8))
+        object.__setattr__(self, "logical", logical.astype(np.uint8))
+
+
+class EffectivePriorBuilder:
+    """Shared fixed-reference projection and validated H3 cache for one sector."""
+
+    def __init__(self, context: OnlineMeasurementContext, *, fault_batch_size: int = 1024):
+        if isinstance(fault_batch_size, bool) or not isinstance(fault_batch_size, Integral) or fault_batch_size < 1:
+            raise ValueError("fault_batch_size must be a positive integer")
+        self.context = context
+        self._fault_batch_size = int(fault_batch_size)
+        self._result = None
+        self._gap = None
+
+    def inspect(self) -> ProjectedDEMResult:
+        if self._result is not None:
+            return self._result
+        c, size = self.context, self._fault_batch_size
+        prefix, faults, h, logical = c.circuit, c.mechanisms, c.check_matrix, c.logical
+        reference = prefix.without_noise().reference_sample()[None, :]
+
+        def interpret(records):
+            output = np.asarray(c.interpret(records))
+            if output.shape != (len(records), h.shape[1]) or not np.all((output == 0) | (output == 1)):
+                raise ValueError("context interpreter returned invalid pre-recovery records")
+            return output.astype(bool, copy=False)
+
+        baseline = interpret(reference)
+        projected = []
+        for start in range(0, len(faults), size):
+            chunk = faults[start:start + size]
+            flips = _propagate_faults(prefix, chunk)
+            try:
+                errors = interpret(reference ^ flips) ^ baseline
+            except ValueError as error:
+                raise UnsupportedProjectedModel(f"controlled faults are outside the configured preparation decoder support: {error}") from error
+            effective = _signatures(errors @ h.T % 2, errors @ logical % 2)
+            raw = _signatures(np.column_stack([np.logical_xor.reduce(flips[:, row], axis=1) for row in c.raw_checks]),
+                              np.logical_xor.reduce(flips[:, c.raw_logical], axis=1))
+            projected.extend(ProjectedFault(fault, signature, signed, tuple(np.flatnonzero(error)))
+                             for fault, signature, signed, error in zip(chunk, effective, raw, errors))
+        projected = tuple(projected)
+        model = ProjectedErrorModel(h.shape[0], merge_independent_events(
+            ProjectedEvent(f.signature, f.mechanism.probability, (f.mechanism.mechanism_id,)) for f in projected))
+        lift_error = None
+        try:
+            self._gap = model.compile_gap()
+        except UnsupportedProjectedModel as error:
+            lift_error = str(error)
+        active = model.active_events
+        diagnostics = ProjectedDEMDiagnostics(
+            len(faults), sum(f.probability > 0 for f in faults), len(model.events),
+            sum(f.signature != f.raw_signed_signature for f in projected),
+            sum(len(e.signature.detectors) > 2 for e in active),
+            sum(not e.signature.detectors and bool(e.signature.logical) for e in active),
+            sum(not f.signature.detectors and not f.signature.logical for f in projected),
+            not any(f.probability > 0 for f in faults), lift_error,
+            sum(i.name in {"X_ERROR", "Y_ERROR", "Z_ERROR", "DEPOLARIZE1", "DEPOLARIZE2"}
+                and i.gate_args_copy() == [0.] for i in prefix),
+        )
+        config = _digest((c.configuration_sha256, c.stage_id, c.sector, str(prefix),
+                          (h.shape, h.indptr.tolist(), h.indices.tolist(), h.data.tolist()),
+                          logical.tolist(), c.raw_checks, c.raw_logical, c.mechanisms, c.convention,
+                          _APPROXIMATION, size, stim.__version__, pymatching.__version__))
+        self._result = ProjectedDEMResult(
+            c.stage_id, model, projected, diagnostics, c.convention, model.graphlike,
+            lift_error is None, c.circuit_sha256, hashlib.sha256(str(prefix).encode()).hexdigest(),
+            config, _digest(reference.tolist()), _digest(model), projection_batch_size=size, sector=c.sector,
+        )
+        return self._result
+
+    def build(self) -> ProjectedDEMResult:
+        result = self.inspect()
+        if not result.h3_lift_valid and not result.diagnostics.zero_noise:
+            raise UnsupportedProjectedModel(f"stage {result.stage_id} sector {result.sector}: {result.diagnostics.lift_error}")
+        return result
+
+    def compile_gap(self) -> SurfaceMWPMHomologyGap:
+        result = self.build()
+        if not result.h3_lift_valid:
+            raise UnsupportedProjectedModel(result.diagnostics.lift_error)
+        return self._gap
 
 
 class ProjectedDEMBuilder:
@@ -357,61 +486,45 @@ class ProjectedDEMBuilder:
         self._results: dict[int, ProjectedDEMResult] = {}
         self._gaps: dict[int, SurfaceMWPMHomologyGap] = {}
 
+    def context(self, stage_index: int = 0, *, interpret=None,
+                prefix_policy_identity: tuple | None = None) -> OnlineMeasurementContext:
+        """Make a causal context; an override must identify its earlier policies.
+
+        H4's default keeps Hamming prefix recovery. H5 passes its actual causal
+        decoder and the complete earlier projected model/configuration hashes.
+        """
+        if (isinstance(stage_index, bool) or not isinstance(stage_index, Integral)
+                or not 0 <= stage_index < len(self._bundle.stages)):
+            raise ValueError("stage_index is outside the factory")
+        stage_index = int(stage_index)
+        if (interpret is None) != (prefix_policy_identity is None):
+            raise ValueError("custom prefix interpretation requires its policy identity")
+        stage = self._bundle.stages[stage_index]
+        convention = self._convention
+        if interpret is None:
+            interpret = lambda records: self._decoder.decode_stage_input(records, stage_index)
+        else:
+            convention = replace(convention, prefix_online="factory_causal_projected_v1")
+        return OnlineMeasurementContext(
+            self._bundle.circuit[:stage.measurement.instructions.stop], stage_index, "z",
+            self._hz, self._lz, interpret, _enumerate_faults(self._bundle, stage_index),
+            tuple(flow.parity.records for flow in stage.terminal_checks),
+            stage.raw_logical_outcome.records,
+            _digest((self._configuration_hash, prefix_policy_identity)), self._circuit_hash, convention,
+        )
+
     def inspect(self, stage_index: int = 0) -> ProjectedDEMResult:
         if (isinstance(stage_index, bool) or not isinstance(stage_index, Integral)
                 or not 0 <= stage_index < len(self._bundle.stages)):
             raise ValueError("stage_index is outside the factory")
         stage_index = int(stage_index)
-        if stage_index in self._results:
-            return self._results[stage_index]
-        bundle, stage = self._bundle, self._bundle.stages[stage_index]
-        prefix = bundle.circuit[:stage.measurement.instructions.stop]
-        faults = _enumerate_faults(bundle, stage_index)
-        reference = prefix.without_noise().reference_sample()[None, :]
-        baseline = self._decoder.decode_stage_input(reference, stage_index)
-        projected = []
-        # Bound dense record storage by batch_size * prefix measurements;
-        # never retain the full mechanisms-by-records table for large codes.
-        for start in range(0, len(faults), self._fault_batch_size):
-            chunk = faults[start:start + self._fault_batch_size]
-            flips = _propagate_faults(prefix, chunk)
-            try:
-                interpreted = self._decoder.decode_stage_input(reference ^ flips, stage_index) ^ baseline
-            except ValueError as error:
-                raise UnsupportedProjectedModel(f"controlled faults are outside the configured preparation decoder support: {error}") from error
-            effective = _signatures(interpreted @ self._hz.T % 2, interpreted @ self._lz % 2)
-            raw_syndrome = np.column_stack([np.logical_xor.reduce(flips[:, flow.parity.records], axis=1)
-                                           for flow in stage.terminal_checks])
-            raw = _signatures(raw_syndrome, np.logical_xor.reduce(flips[:, stage.raw_logical_outcome.records], axis=1))
-            projected.extend(ProjectedFault(fault, signature, signed, tuple(np.flatnonzero(error)))
-                             for fault, signature, signed, error in zip(chunk, effective, raw, interpreted))
-        projected = tuple(projected)
-        events = merge_independent_events(ProjectedEvent(f.signature, f.mechanism.probability,
-                                                        (f.mechanism.mechanism_id,)) for f in projected)
-        model = ProjectedErrorModel(len(bundle.code.z_checks), events)
-        lift_error = None
-        try:
-            self._gaps[stage_index] = model.compile_gap()
-        except UnsupportedProjectedModel as error:
-            lift_error = str(error)
-        active = model.active_events
-        diagnostics = ProjectedDEMDiagnostics(
-            len(faults), sum(f.probability > 0 for f in faults), len(events),
-            sum(f.mechanism.probability > 0 and f.signature != f.raw_signed_signature for f in projected),
-            sum(len(e.signature.detectors) > 2 for e in active),
-            sum(not e.signature.detectors and bool(e.signature.logical) for e in active),
-            sum(not f.signature.detectors and not f.signature.logical for f in projected),
-            not any(f.probability > 0 for f in faults), lift_error,
-            sum(i.name in {"X_ERROR", "Y_ERROR", "Z_ERROR", "DEPOLARIZE1", "DEPOLARIZE2"}
-                and i.gate_args_copy() == [0.] for i in prefix),
-        )
-        result = ProjectedDEMResult(stage_index, model, projected, diagnostics, self._convention,
-                                    model.graphlike, lift_error is None, self._circuit_hash,
-                                    hashlib.sha256(str(prefix).encode()).hexdigest(),
-                                    self._configuration_hash, _digest(reference.tolist()), _digest(model),
-                                    projection_batch_size=self._fault_batch_size)
-        self._results[stage_index] = result
-        return result
+        if stage_index not in self._results:
+            context = self.context(stage_index)
+            service = EffectivePriorBuilder(context, fault_batch_size=self._fault_batch_size)
+            self._results[stage_index] = service.inspect()
+            if service._gap is not None:
+                self._gaps[stage_index] = service.compile_gap()
+        return self._results[stage_index]
 
     def build(self, stage_index: int = 0) -> ProjectedDEMResult:
         result = self.inspect(stage_index)

@@ -219,7 +219,15 @@ def generate_bell_measurement_and_correction_module(
         first_bell_block_support: List[int],
         second_bell_block_support: List[int],
         decoder_generator: Callable[[ndarray], Callable[[ndarray], ndarray]],
+        *,
+        create_codecapacity_dem: bool = False,
+        online_contexts=None,
 ) -> measurement_module:
+    """Bell gadget; True requires complete preceding X/Z online contexts."""
+    if not isinstance(create_codecapacity_dem, bool):
+        raise ValueError("create_codecapacity_dem must be bool")
+    if create_codecapacity_dem and online_contexts is None:
+        raise ValueError("True Bell decoding requires full preparation + gate + measurement online_contexts")
     (x_pcm, z_pcm, x_logical, z_logical) = parity_check_tuple
     k = x_logical.shape[0]
     num_qubits = x_pcm.shape[1]
@@ -295,7 +303,9 @@ def generate_bell_measurement_and_correction_module(
         correction_array,
         data_block_support + first_bell_block_support + second_bell_block_support,
     )
-    #print(module.circuit.diagram())
+    if create_codecapacity_dem:
+        from .online_context import configure_bell_projected_priors
+        configure_bell_projected_priors(module, parity_check_tuple, online_contexts)
 
     return module
 

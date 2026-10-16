@@ -12,6 +12,7 @@ from .adapters import (
 from .aggregators import all_components_max_confidence, dem_only_max_confidence
 from .surface_gap import HomologyGapBatch, SurfaceMWPMHomologyGap
 from .codecapacity_dem import (
+    EffectivePriorBuilder, OnlineMeasurementContext,
     FaultMechanism, FaultSignature, PreparationDecoderConvention,
     ProjectedDEMBuilder, ProjectedDEMDiagnostics, ProjectedDEMResult,
     ProjectedErrorModel, ProjectedEvent, ProjectedFault,
@@ -33,6 +34,7 @@ __all__ = [
     "all_components_max_confidence",
     "HomologyGapBatch",
     "SurfaceMWPMHomologyGap",
+    "EffectivePriorBuilder", "OnlineMeasurementContext",
     "FaultMechanism", "FaultSignature", "PreparationDecoderConvention",
     "ProjectedDEMBuilder", "ProjectedDEMDiagnostics", "ProjectedDEMResult",
     "ProjectedErrorModel", "ProjectedEvent", "ProjectedFault",

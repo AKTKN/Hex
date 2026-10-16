@@ -43,7 +43,18 @@ def knill_online_offline(
         results_path = "",
         surface_code: bool = False,
         seed: int | None = None,
+        *,
+        create_codecapacity_dem: bool = False,
 ):
+    """Fixed Knill EC; False preserves legacy priors and sampling exactly.
+
+    True uses full-prefix fixed-reference projected X/Z sector priors. It
+    raises UnsupportedProjectedModel if either sector fails the validated
+    graph model. Final physical readout remains noisy in both modes.
+    Fig. 4(d) reproduction convention is create_codecapacity_dem=False.
+    """
+    if not isinstance(create_codecapacity_dem, bool):
+        raise ValueError("create_codecapacity_dem must be bool")
     block_template, _, _, _ = create_stabilizers_and_block_template(*parity_check_tuple)
     blocks = generate_blocks(2*num_teleportations+1, block_template)
 
@@ -129,6 +140,9 @@ def knill_online_offline(
 
     mod_circ = modularised_circuit(module_list)
     mod_circ.generate_correction_to_measurement_flip_map()
+    if create_codecapacity_dem:
+        from hex_qec.modularisation.online_context import configure_knill_projected_priors
+        configure_knill_projected_priors(mod_circ, parity_check_tuple)
 
     samples_performed, logical_errors = mod_circ.simulate(
         max_shots,

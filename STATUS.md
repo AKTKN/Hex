@@ -1106,3 +1106,112 @@ mechanisms and prefix size, despite bounded memory. Native handles remain
 worker-local/synchronous and source plans must not be mutated afterward.
 Scientific specification bytes, legacy physical/decoder code and parent user
 changes are untouched. The H4 commit/push outcome belongs to its handoff.
+
+
+## Auxiliary-system H5 public options and whole-implementation audit
+
+Date: 2026-10-16. User authorized H5 after H4 and requested a whole
+implementation validity review. Starting checkout: Hex `auxiliary-system`
+7df0b96f2ce2d2ba947cc6bb3bddd0e0b74d3008, clean and tracking origin. Fetch
+confirmed the lineage; the other `hex-parallel` worktree and pre-existing
+parent changes are untouched. H5 modifies only Hex source/tests/docs.
+
+### Implemented public behavior
+
+Fixed `knill_online_offline`, the Bell gadget generator,
+`FactoryBatchDecoder` and `CompiledFactory.from_bundle` expose a final
+keyword-only `create_codecapacity_dem=False`. False retains the historical
+physical circuits, noise, Hamming callbacks and seeds. Fixed Knill's tuple,
+256-shot batch semantics and noisy final readout are unchanged. The factory
+still builds two supports and one final ideal evaluation oracle separately
+from decoder policy. Fig. 4(d) reproduction convention is explicitly False.
+
+Shared `OnlineMeasurementContext` / `EffectivePriorBuilder` boundaries carry
+full causal prep/gate/readout prefixes and actual record interpretation.
+H4's existing factory interface now delegates to that projection core. Full
+Knill supplies both X and Z sectors after legacy map construction; prefix
+interpreters replay actual prep/earlier Bell callbacks and cached sparse maps,
+without final evaluation. Earlier projected policies enter later contexts.
+True factory stages likewise build sequentially using actual preceding
+projected recoveries, with complete policy/model/configuration hashes.
+
+True uses H3 sector minima to correct logical parity, not n-bit XOR of event
+columns. Factory gap units become `log_weight`, shapes and terminal convention
+stay unchanged. Full Knill's feed-forward stays logical Z then X. Native
+noninteger quantization/near-tie restrictions persist. Caches cover sampler,
+graphs, prep converters/maps and model results; H4 cache hits return before
+fault enumeration. Full-Knill True enables shared prep m2d converters; False
+keeps its prior callback behavior. No graph/simulator/converter construction
+occurs in the configured True callbacks or factory decode/sample loops.
+
+### Tested supported and rejected settings
+
+- Factory True: d=3, p=.001, preparation (2,2), T=1/2, <=32 saved physical
+  shots per batch; frame equations, scalar/batch equality, policy identity,
+  finite log gaps, future/oracle isolation and deterministic construction gates.
+- Full Knill True: d=3, p=.001, one SE round, T=1, both Pauli bases and both
+  Bell sectors. Each retains 1,058 independent-generator mechanisms; complete
+  event counts are 12 (X) and 10 (Z), including no-ops. Both-sector chosen
+  classes agree with exhaustive model minima. Six paired physical fault
+  boundaries (16 shots each) independently verify raw propagation, including
+  prep reset/SE, correlated Bell coupling and both MRX/MR readout bases.
+- d=3, p=.001, T=1, two/three SE rounds: full-Knill X projection has detector-
+  free logical terms. Strict validation raises an explicit stage/sector error
+  before sampling; terms are retained, not dropped or silently approximated.
+  Other full-Knill parameter regimes must pass the same checks and are not
+  certified by the one-round fixture. True at p=0 explicitly requests False's
+  finite Hamming baseline rather than constructing infinite weights.
+- False golden regressions were generated from an isolated H4 git archive:
+  d=3 p=.015, seed 1021, 64 shots, (r,T,basis)=(1,1,X)/(2,2,Z). Circuit hashes,
+  raw record hashes, complete correction vectors and per-shot label hashes
+  remain identical. Error counts are 11/64 and 9/64 respectively. Golden
+  native hashes are version-scoped; implicit/explicit False equality is always
+  checked. Existing fixed/stateful/adaptive/diagnostic checks also pass.
+
+### Validation results and whole-implementation judgment
+
+Initial refactor regression: 1 failed, 69 passed, 8 warnings, 33.65 s.
+An H4 cache test caught repeated enumeration on cache hits; fixed before the
+passing audit. Initial H5 tests: 2 failed, 12 passed, 8 warnings, 32.56 s;
+the two assertions guessed 905 mechanisms, corrected to the independently
+observed 1,058 (both models were valid). No failing assertion was suppressed.
+
+Whole fast repository selection: **260 passed, 2 deselected, 8 warnings,
+94.24 s**. The two deselections are existing 2,048-shot statistical LER
+comparisons; no full paper/sweep was run. Final H5-only rerun after stronger
+context/manual replay, final-noise independence and direct-gadget/unsupported-
+backend assertions: **15 passed, 8 warnings, 37.11 s**. Exact commands and
+further integrity checks are recorded in TEST.md.
+
+H0-H5's documented software boundaries pass this audit: signed circuit flows,
+two-support refresh, prep/frame interpretation, causal oracle-free inference,
+small-code exact model minima, complete projected mechanism accounting,
+backward compatibility and cached execution. The scientific prior remains a
+named fixed-reference single-fault independent-superposition approximation.
+H4's plus-SE logical-response mismatch (13/16 paired records) and nonlinear
+reset-pair responses (18/36) remain tested, so it is not even a certified
+intrinsic-randomness-averaged first-order marginal. X/Z sector inference also
+omits joint correlations. Graph-valid is a mathematical model property, not
+proof of physical likelihood accuracy or general fault tolerance.
+
+Use False for reproduction/control comparisons and validate True on shared
+physical samples before scientific conclusions. No posterior-confidence,
+LER-improvement, large-distance speed, threshold or paper-reproduction claim
+is established. Hamming/log-weight gaps require separate thresholds. Current
+native handles remain worker-local; setup CPU scales with mechanisms/prefix.
+No bench B0 integration, experiment outputs or general multi-logical decoder
+was implemented. [The H5 guide](docs/logical_zero_factory_h5.md) documents the
+exported factory API and all supported-domain/approximation considerations.
+The H5 commit/push outcome belongs to its handoff.
+
+
+Final whole-audit extension: a setup probe also accepted full Knill d=3,
+p=.001, one SE round, T=2/Z. Added a sixteenth H5 test that compares both
+stages/sectors to independent manual replay of actual prep and preceding
+projected Bell feed-forward on 16 saved physical shots, with zero detector
+residuals. The final rerun of
+`PYTHONPATH=src python -m pytest -q tests -k 'not ler_is_statistically_compatible'`
+passed **261 tests, 2 deselected, 8 warnings, 86.27 s**. This extends tested
+full-Knill coverage to T=2/Z without weakening the two/three-SE X-sector
+rejection. A test-order review also moved prepared-bundle construction before
+count instrumentation so the factory reuse counter can run independently.

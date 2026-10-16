@@ -164,3 +164,28 @@ Controlled setup lanes/classical enumeration are not Monte Carlo shots.
 Default H3 samples, every result field, frames and labels match the previous
 decoder exactly on saved d=3 T=1/2/3 records. No H5 flag, large sweep, full-suite
 execution, experiment output or validated LER-improvement claim is included.
+
+
+## H5 public options and whole fast selection
+
+`test_codecapacity_public.py` adds 16 tests for complete context/service
+integration, both Bell sectors, version-scoped H4 False golden hashes,
+noisy final-readout preservation, strict unsupported-model errors,
+factory stage policy/frame/gap semantics, causal isolation, direct gadget
+contexts, physical fault boundaries and deterministic construction gates.
+New physical batches use <=64 shots; native graphs/converters/samplers are
+cached and inputs stay unchanged.
+
+Whole fast selection: `PYTHONPATH=src python -m pytest -q tests -k
+'not ler_is_statistically_compatible'` finally gives 261 passed, 2 deselected,
+8 warnings, 86.27 s. The two inherited 2,048-shot statistical comparisons
+are deliberately excluded. After strengthening H5 context/API assertions,
+the 15-test subset passes in 37.11 s. Initial failures and exact full commands
+are in [TEST.md](../TEST.md#auxiliary-system-h5-public-options-and-whole-implementation-audit).
+
+Full Knill True is tested at d=3 one-SE/T=1 in both Pauli bases and sectors,
+plus T=2/Z with manual actual-policy prefix replay;
+two/three-SE X-sector logical-only terms raise explicitly. Factory True
+covers d=3 (2,2), T=1/2. Tests retain H4's context/nonlinearity counterexamples;
+passing model checks do not certify the physical prior or a LER improvement.
+See [the H5 guide](../docs/logical_zero_factory_h5.md) for the whole assessment.

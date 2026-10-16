@@ -39,13 +39,15 @@ class FactoryCacheKey:
     stim_version: str = stim.__version__
     pymatching_version: str = pymatching.__version__
     gap_policy: str = "surface_two_boundary_hamming_v1"
+    create_codecapacity_dem: bool = False
+    projected_prior_sha256: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class FactoryOperationalBatch:
     """Estimated operational records; all arrays have shots as the first axis.
 
-    Corrected syndromes: (shots,T,m_z), before online Hamming recovery.
+    Corrected syndromes: (shots,T,m_z), before configured online recovery.
     Raw/corrected byproducts and frame_resolved: (shots,T).
     Output frames: (shots,T,n), after the stage's inferred logical X update.
     frame_resolved reports decoder consistency, not physical state truth.
@@ -98,7 +100,9 @@ class FactoryBatchDecoder:
     samplers, matching graphs, or correction maps. They do not mutate inputs.
     """
 
-    def __init__(self, bundle: FactoryCircuitBundle):
+    def __init__(self, bundle: FactoryCircuitBundle, *, create_codecapacity_dem: bool = False):
+        if not isinstance(create_codecapacity_dem, bool):
+            raise ValueError("create_codecapacity_dem must be bool")
         bundle.validate()
         if bundle.metadata["frame_convention"] != FACTORY_FRAME_CONVENTION:
             raise ValueError("unsupported factory frame convention")
@@ -111,6 +115,26 @@ class FactoryBatchDecoder:
             raise ValueError("factory must have one zero prep and one plus prep per stage")
         self._initial = self._plans[self._stages[0].preparations[0].measurements.start]
         self._readout = SurfaceFactoryReadout(bundle.code, self._initial.module.z_pcm)
+        self._projected_gaps = []
+        priors = []
+        if create_codecapacity_dem:
+            from hex_qec.decoders.codecapacity_dem import EffectivePriorBuilder, ProjectedDEMBuilder
+            source = ProjectedDEMBuilder(bundle)
+            for stage in self._stages:
+                context = source.context(
+                    stage.index, interpret=lambda records, j=stage.index: self.decode_stage_input(records, j),
+                    prefix_policy_identity=tuple((p.model_sha256, p.configuration_sha256) for p in priors),
+                )
+                service = EffectivePriorBuilder(context)
+                prior = service.build()
+                self._projected_gaps.append(service.compile_gap())
+                priors.append(prior)
+        self._projected_gaps = tuple(self._projected_gaps)
+        self.projected_priors = tuple(priors)
+
+    @property
+    def gap_units(self) -> str:
+        return "log_weight" if self._projected_gaps else self._readout.gap_units
 
     def decode_operational(self, measurements: np.ndarray, *,
                            shot_id_start: int = 0) -> FactoryOperationalBatch:
@@ -146,10 +170,17 @@ class FactoryBatchDecoder:
             syndrome = self._readout.syndrome(measured)
             # Score only this stage's corrected syndrome, before recovery.
             # The graph is independent of future records and terminal truth.
-            if score_gaps:
-                gaps[:, index] = self._readout.score_gap(syndrome)
-            recovery = self._readout.recover(syndrome)
-            byproduct = self._readout.logical_parity(measured ^ recovery)
+            if index < len(self._projected_gaps):
+                sectors = self._projected_gaps[index].decode_batch(syndrome)
+                if score_gaps:
+                    gaps[:, index] = sectors.gap
+                # Projected corrections index fault events, not data qubits.
+                byproduct = self._readout.logical_parity(measured) ^ sectors.best_class.astype(bool)
+            else:
+                if score_gaps:
+                    gaps[:, index] = self._readout.score_gap(syndrome)
+                recovery = self._readout.recover(syndrome)
+                byproduct = self._readout.logical_parity(measured ^ recovery)
             memory_x = plus.x ^ self._readout.byproduct_frame(byproduct)
             memory_z = plus.z ^ memory_z  # Z_target propagates to the new control
             syndromes[:, index] = syndrome
@@ -168,8 +199,9 @@ class FactoryBatchDecoder:
         """Return interpreted (shots,n) Z records before this stage's recovery.
 
         Requires exactly the prefix ending at this stage's destructive readout.
-        Used for setup-time controlled-fault projection; no final oracle, gap
-        or terminal label is evaluated. Earlier stages keep Hamming recovery.
+        Used for setup-time controlled-fault projection; no final oracle or
+        terminal label is evaluated and no gap is reported. Earlier stages use their configured
+        recovery, including already-built projected priors during H5 setup.
         """
         if (isinstance(stage_index, bool) or not isinstance(stage_index, Integral)
                 or not 0 <= stage_index < len(self._stages)):
@@ -183,7 +215,7 @@ class FactoryBatchDecoder:
         operational, gaps, _ = self._decode_operational(batch[:, :self._oracle.start], shot_id_start=shot_id_start)
         error = self._readout.evaluate_terminal(batch[:, self._oracle.slice], operational.output_frame_x[:, -1])
         return FactoryBatchResult(**vars(operational), logical_error=error,
-                                  gaps=gaps, gap_units=self._readout.gap_units)
+                                  gaps=gaps, gap_units=self.gap_units)
 
 
 def _compile_sampler(circuit: stim.Circuit, seed: int | None):
@@ -206,7 +238,8 @@ class CompiledFactory:
     _sampler: object = field(repr=False, compare=False)
 
     @classmethod
-    def from_bundle(cls, bundle: FactoryCircuitBundle, *, seed: int | None = None) -> "CompiledFactory":
+    def from_bundle(cls, bundle: FactoryCircuitBundle, *, seed: int | None = None,
+                    create_codecapacity_dem: bool = False) -> "CompiledFactory":
         if seed is not None:
             _validate_shot_ids(seed, 1)
             seed = int(seed)
@@ -215,6 +248,7 @@ class CompiledFactory:
         if snapshot.metadata["circuit_sha256"] != digest:
             raise ValueError("factory circuit changed since its metadata hash was built")
         metadata = snapshot.metadata
+        decoder = FactoryBatchDecoder(snapshot, create_codecapacity_dem=create_codecapacity_dem)
         key = FactoryCacheKey(
             hashlib.sha256(repr(snapshot.code).encode()).hexdigest(), snapshot.code.distance,
             metadata["physical_error"], metadata["noise"], snapshot.preparation.r_0,
@@ -222,8 +256,17 @@ class CompiledFactory:
             metadata["frame_convention"], metadata["preparation_prior"],
             metadata["terminal_label_convention"], seed,
         )
-        return cls(key, snapshot.circuit, FactoryBatchDecoder(snapshot),
+        if create_codecapacity_dem:
+            key = replace(key, create_codecapacity_dem=True, decoder_policy="factory_causal_projected_v1",
+                          gap_policy="surface_two_boundary_projected_v1",
+                          projected_prior_sha256=tuple(p.configuration_sha256 for p in decoder.projected_priors))
+        return cls(key, snapshot.circuit, decoder,
                    _compile_sampler(snapshot.circuit, seed))
+
+    @property
+    def projected_priors(self) -> tuple:
+        """Inspectable immutable model/provenance results, empty in False mode."""
+        return self._decoder.projected_priors
 
     @property
     def circuit(self) -> stim.Circuit:

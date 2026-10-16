@@ -202,3 +202,10 @@ See [TEST.md](../TEST.md#auxiliary-system-h4-projected-factory-priors) for exact
 commands, initial failures and final regressions. H5 public options, full
 Knill changes, threshold selection, experiment output and large sweeps remain
 out of scope.
+
+
+H5 now adds the public option and shares this projection algorithm through
+`OnlineMeasurementContext` / `EffectivePriorBuilder`. The H4 standalone API
+still uses Hamming prefix recovery; True factories use actual projected prefix
+policies with separate hashes. See [the H5 guide](logical_zero_factory_h5.md)
+for supported full-Knill X/Z cases, rejected models and the whole audit.

@@ -131,3 +131,27 @@ case/stage. Its fixed-reference approximation is not an exact conditional
 model: observed prep-context and nonlinear multi-fault mismatches are recorded
 in the H4 guide/STATUS. No public full-Knill option, simulator feedback,
 postselection, filesystem output or H5 work is introduced.
+
+## H5 optional projected factory execution
+
+`FactoryBatchDecoder(bundle, *, create_codecapacity_dem=False)` and
+`CompiledFactory.from_bundle(bundle, *, seed=None, create_codecapacity_dem=False)`
+add the public policy without changing circuits. False retains H2/H3 behavior.
+True builds complete causal contexts/validated graphs in stage order, using
+actual earlier projected recoveries and their hashes for later priors. A raw
+logical parity is XORed with the chosen error class, while frames retain their
+original data-position shapes. Terminal evaluation stays separate and Hamming.
+
+True full results have `gap_units="log_weight"`; False has "hamming_weight".
+Public `projected_priors` is an immutable tuple of inspectable per-stage results.
+Keys add the flag, projected decoder/gap policy and configuration hashes;
+False defaults remain False/empty. `decode_stage_input` now uses the configured
+earlier policy. Native graphs/sampler/converters/maps are reused; unsupported
+models and zero-noise finite-weight requests raise with no silent fallback.
+
+The d=3 p=.001 depths (2,2) T=1/2 True cases pass batch/scalar, frames,
+future/oracle isolation and constructor checks. The complete fast repository
+selection passes 261 tests, two larger statistical cases excluded. See
+[the H5 guide](../../../docs/logical_zero_factory_h5.md) for precise context,
+numerical/probabilistic limits and full-Knill coverage. No physical prior
+accuracy certificate, speedup, threshold or posterior-confidence claim follows.

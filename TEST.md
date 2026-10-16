@@ -1388,3 +1388,119 @@ No environment/dependency changes. All commands ran from the Hex worktree.
 
 No H5 option, full pytest suite, large Monte Carlo, performance sweep, exact
 conditional/marginal-model claim, LER-improvement claim or paper reproduction.
+
+
+## Auxiliary-system H5 public options and whole-implementation audit
+
+Date: 2026-10-16. Same Python 3.12.7 / NumPy 1.26.4 / SciPy 1.13.1 /
+Stim 1.15.0 / PyMatching 2.3.1 / stimbposd 0.2.0 / local LDPC 2.1.2 /
+pytest 7.4.4 environment as H4. No dependencies were installed/upgraded.
+
+Initial refactor check:
+
+```bash
+PYTHONPATH=src python -m pytest -q tests/test_codecapacity_dem.py tests/test_factory_batch.py
+```
+
+Result: **1 failed, 69 passed, 8 warnings, 33.65 s**. The cached H4 builder
+re-enumerated faults before checking the result cache; inspect now validates
+its index and returns a cached result before any context/enumeration work.
+That regression is fixed and passes in the subsequent whole selection.
+
+Initial public-option check:
+
+```bash
+PYTHONPATH=src python -m pytest -q tests/test_codecapacity_public.py
+```
+
+Result: **2 failed, 12 passed, 8 warnings, 32.56 s**. Both supported full-Knill
+models passed the lift; two test assertions incorrectly guessed 905 mechanisms.
+The actual full prefix has 1,058 retained mechanisms. Corrected the expected
+counts; did not change/drop model faults to fit the assertion.
+
+Whole fast repository selection:
+
+```bash
+PYTHONPATH=src python -m pytest -q tests -k 'not ler_is_statistically_compatible'
+```
+
+Result: **260 passed, 2 deselected, 8 warnings, 94.24 s**. It covers all
+H1/H2/H3/H4/H5 tests, decoder/result adapters, fixed and stateful Knill,
+adaptive preparation/confidence/pair logic, shared correction caches,
+forced-long diagnostics, validation/statistical-analysis infrastructure and
+profiling tests. The two intentionally excluded inherited tests run 2,048
+physical shots per workflow to compare statistical LERs. This is a complete
+fast selection, not a claim that the unrestricted suite or paper figure ran.
+Existing inherited 256-shot static fixtures remain; new physical tests use
+<=64 shots (mostly 16/32), and controlled fault lanes/classical enumeration
+are not Monte Carlo shots. All warnings are existing pkg_resources/namespace
+deprecations from the local LDPC dependency environment.
+
+After adding stronger context-vs-manual replay, final-noise independence,
+direct Bell True-context API and unsupported prep-backend assertions, reran:
+
+```bash
+PYTHONPATH=src python -m pytest -q tests/test_codecapacity_public.py
+```
+
+Result: **15 passed, 8 warnings, 37.11 s**. No production algorithm changed
+since the whole selection except explanatory docstrings. Coverage includes:
+
+- False implicit/explicit API compatibility and fixed-seed circuit/raw/
+  complete-correction/per-shot-label regression against an isolated H4 archive;
+- d=3 full Knill True, one SE round/T=1, both bases and both sectors,
+  noisy final readout, `(shots,2)` logical Z/X feed-forward and exhaustive
+  both-sector min-sum classes;
+- explicit rejection before sampling of d=3 full-Knill X-sector invisible
+  logical terms at two/three SE rounds, plus zero-noise finite-weight requests;
+- full-prefix interpretation equal to manual prep-correction replay, strict
+  width/sector/code checks, unchanged models after final-noise removal,
+  complete-context standalone gadget use and unsupported prep backend guards;
+- six paired physical fault cases at prep reset/SE, correlated Bell coupling
+  and both X/Z destructive readouts; raw controlled propagation matches exactly;
+- d=3 depths (2,2) factory True T=1/2, finite log-weight gaps, frame equations,
+  identical saved physical records, scalar/batch equality, actual earlier
+  projected policy identities and future/oracle causal isolation;
+- factory counters (eight setup matchings when reusing the prepared bundle,
+  one compiled sampler for T=2) and forbidden native constructions during
+  repeated callbacks/sample/decode; complete input/flag/context boundaries.
+
+Golden False data were produced by extracting `git archive 7df0b96 src` into
+a temporary directory outside the repo and running only that package in a
+fresh process. At d=3, p=.015, seed 1021 and 64 shots, (r,T,basis)=(1,1,X)
+has 11 error labels and (2,2,Z) has 9. Checked-in tests pin circuit/raw/label/
+correction SHA256 hashes; native hashes are scoped to Stim 1.15.0/PyMatching
+2.3.1. The archive and physical outputs are not committed. Default factory
+regressions remain covered by H1-H4 tests and their saved-record checks.
+
+The whole assessment is software/model validity within tested domains. H4's
+13/16 physical-context logical mismatch and 18/36 nonlinear two-fault pairs
+are retained regression cases, not corrected away. No exact marginal,
+conditional/posterior, validated gain, threshold, speedup, large Monte Carlo
+or FT claim follows. See [the H5 audit guide](docs/logical_zero_factory_h5.md).
+
+
+Final whole-audit extension: a setup probe also accepted full Knill d=3,
+p=.001, one SE round, T=2/Z. Added a sixteenth H5 test that compares both
+stages/sectors to independent manual replay of actual prep and preceding
+projected Bell feed-forward on 16 saved physical shots, with zero detector
+residuals. The final rerun of
+`PYTHONPATH=src python -m pytest -q tests -k 'not ler_is_statistically_compatible'`
+passed **261 tests, 2 deselected, 8 warnings, 86.27 s**. This extends tested
+full-Knill coverage to T=2/Z without weakening the two/three-SE X-sector
+rejection. A test-order review also moved prepared-bundle construction before
+count instrumentation so the factory reuse counter can run independently.
+
+
+Final integrity checks: `PYTHONPATH=src python -m compileall -q src` and
+`git diff --check` pass. Fresh decoder-first and protocol-first interpreter
+imports pass. All six Python package directories have DOCS.md; all 107 local
+links/anchors in changed Markdown resolve. Root AGENTS/STATUS/TEST retain their
+exact H4 byte prefixes, and the scientific specification remains byte-identical
+to the parent copy (SHA256
+`ca7a2748f60e05c2944cddd318c1096eedb269293280826661180b49056337b4`).
+All 25 changed files are source/tests/Markdown; parent pre-existing `.gitignore`
+and untracked AGENTS/STATUS remain untouched. No experiment outputs are staged.
+The independently invoked factory construction-counter test also passes:
+`PYTHONPATH=src python -m pytest -q tests/test_codecapacity_public.py::test_factory_true_reuses_graphs_sampler_and_maps`
+(**1 passed, 8 warnings, 4.73 s**).

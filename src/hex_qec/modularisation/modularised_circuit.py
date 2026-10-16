@@ -399,13 +399,26 @@ class css_detector_module():
             self.z_dem_correction_to_local_detector_flips = gf2_matmul_csc(self.z_dem_hyperedge_to_edge, self.z_dem_correction_to_local_detector_flips)
             self.z_dem_correction_to_local_measurement_flips = gf2_matmul_csc(self.z_dem_hyperedge_to_edge, self.z_dem_correction_to_local_measurement_flips)
 
+        cached_converters = None
+
+        def cache_m2d_converters():
+            """Opt-in worker-local reuse; False-mode callbacks stay unchanged."""
+            nonlocal cached_converters
+            if cached_converters is None:
+                cached_converters = (self.x_det_circuit.compile_m2d_converter(),
+                                     self.z_det_circuit.compile_m2d_converter())
+
+        self.cache_m2d_converters = cache_m2d_converters
+
         def decode_impl(measurement_samples: ndarray) -> tuple[ndarray, CSSInnerDecodeResults]:
 
             with self._profile_section("measurement_to_detector.x"):
-                x_m2d_converter = self.x_det_circuit.compile_m2d_converter()
+                x_m2d_converter = (self.x_det_circuit.compile_m2d_converter() if cached_converters is None
+                                   else cached_converters[0])
                 x_detector_flips, x_observable_values = x_m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
             with self._profile_section("measurement_to_detector.z"):
-                z_m2d_converter = self.z_det_circuit.compile_m2d_converter()
+                z_m2d_converter = (self.z_det_circuit.compile_m2d_converter() if cached_converters is None
+                                   else cached_converters[1])
                 z_detector_flips, z_observable_values = z_m2d_converter.convert(measurements=measurement_samples, separate_observables=True)
 
 

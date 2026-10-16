@@ -100,3 +100,28 @@ both components on refresh reset. Legacy deterministic RX propagation may
 retain an invisible X component; exact canonical-map and unmodified physical
 equivalence tests cover the distinction. Sampling/stage processing lives in
 `simulation/factory.py`, with [equations, cache/result semantics and limits](../../../docs/logical_zero_factory_h2.md).
+
+## H5 complete Bell contexts
+
+`generate_bell_measurement_and_correction_module` keeps all six positional
+arguments and adds keyword-only `create_codecapacity_dem=False` and
+`online_contexts=None`. False retains native Hamming callbacks. True requires
+complete `(x_context,z_context)` objects ending at that remapped physical
+Bell gadget; a local gadget cannot infer preceding preparations. Missing,
+mismatched or unsupported contexts raise before use.
+
+`online_context.py` installs validated `EffectivePriorBuilder` models and
+logical parity callbacks, preserving the logical Z/X correction ordering and
+`(shots,2)` shape for its supported one-logical-qubit case. The fixed-Knill
+orchestrator first builds the legacy physical circuit/maps, then configures
+stages chronologically. Interpreters replay actual prep and earlier Bell
+corrections on prefix-only cached sparse maps; no current recovery, final
+readout noise or label enters the prior. Each module exposes inspectable
+`projected_priors`. X/Z correlations are not jointly decoded.
+
+CSS modules add idempotent `cache_m2d_converters()`, enabled only by True
+Knill setup. Template callbacks share their two cached native converters.
+False retains historical per-callback converter construction and all seeded
+behavior. Cached handles are synchronous/worker-local and must not be mutated.
+See [the H5 guide](../../../docs/logical_zero_factory_h5.md) for exact equations,
+prior validity, hashes, supported/rejected settings and whole-audit evidence.

@@ -8,7 +8,7 @@ Detailed call signatures and examples: [DESCRIPTION.md](DESCRIPTION.md).
 online_decoder_generator, offline_decoder_generator,
 matchable_offline_decoding, physical_error, max_shots,
 max_errors_before_halting, pauli, num_teleportations, results_path="",
-surface_code=False, seed=None)` returns the legacy two-count tuple.
+surface_code=False, seed=None, *, create_codecapacity_dem=False)` returns the legacy two-count tuple.
 
 For `T` teleportations it allocates `2*T+1` complete block supports. The input
 data is encoded ideally in the selected X/Z basis. Each cycle prepares fresh
@@ -77,4 +77,24 @@ Full Knill and Fig. 4(d) retain noisy final readout. H3's
 by the separate decoder/executor. H4 supplies an explicit
 [projected-prior builder](../../../docs/logical_zero_factory_h4.md), preserving
 physical builders and default execution. The public `create_codecapacity_dem`
-option remains H5 work and is not implemented here.
+option is implemented in H5 as described below.
+
+## H5 fixed-Knill option
+
+`create_codecapacity_dem: bool = False` is a final keyword-only option;
+all previous positional calls and False-mode circuits, native Hamming
+callbacks, seeds and outputs retain their meaning. True installs separate
+X/Z sector decoders using complete preparation/coupling/destructive-readout
+prefixes after correction-map construction. The final logical readout stays
+noisy. The adaptive endpoint is unchanged. Fig. 4(d) convention is False.
+
+Full Knill True is tested at d=3, p=.001, one SE round, one teleportation,
+both Pauli bases, plus two teleportations in Z with manual prefix replay.
+At two/three SE rounds in the one-teleportation fixture, X-sector
+logical-only terms raise `UnsupportedProjectedModel`; there is no lossy
+conversion or silent fallback. Factory policy configuration belongs to
+`CompiledFactory.from_bundle`/`FactoryBatchDecoder`, keeping physical building
+independent. See [the H5 guide](../../../docs/logical_zero_factory_h5.md) for
+full contracts, public imports, tests, projected-prefix policy, min-sum and
+reference-context limits. Whole fast selection: 261 passed, two larger
+statistical cases excluded. No paper/threshold/LER-improvement claim is made.
