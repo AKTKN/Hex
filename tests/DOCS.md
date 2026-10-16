@@ -11,6 +11,7 @@ contains Python modules but has no `__init__.py`. Historical executions are in
 | Test file/group | What it checks |
 | --- | --- |
 | `test_factory_circuit.py` | H1 signed circuit/ledger, preparation frames, oracle isolation, single faults, exact legacy map comparisons |
+| `test_factory_batch.py` | H2 reused-support refreshes, causal batches, terminal labels, replay in both Pauli bases, cache lifetimes |
 | `test_phase1_decoder_adapters.py` | Batch/scalar dtype compatibility, decoder factories, rich results, module normalization |
 | `test_phase2_results.py` | Aggregate wrappers, legacy tuple compatibility, detail-level validation |
 | `test_phase3_stateful_backend.py` | Measurement axes/reconstruction, fixed endpoints, small statistical comparisons |
@@ -57,12 +58,42 @@ byproducts, raw/repaired signs, reversed CNOT rejection, exact SE/noise/record
 boundaries, two supports, an ideal oracle isolated from all decoders/detectors,
 eight physical fault cases and a terminal logical fault, deterministic
 legacy map equality, and batch decoder reuse/partition equivalence.
-Production multi-stage sampling, logical-error results, gap enumeration, and
-projected-prior tests remain later phases.
+H2 now supplies production multi-stage sampling and logical-error results.
+Gap enumeration and projected-prior tests remain later phases.
 
 Later [factory phases](../docs/README.md) must preserve H1's gates and add
 two-support role swaps, multi-stage causal checks, scalar/batch execution
-equivalence, exhaustive `2^9` sector-cost checks, projected-model rejection,
-and legacy-option regressions as those algorithms are implemented. New
+equivalence (added in H2), exhaustive `2^9` sector-cost checks, projected-model
+rejection, and legacy-option regressions as those algorithms are implemented. New
 production paths must compile/cache circuits, decoders, and sparse maps
 outside shot loops. H1 does not start H2.
+
+## H2 batch validation
+
+The final targeted run passed **111 tests**, including **34 H2**, all **41 H1**
+and 36 existing regressions; two inherited statistical-LER cases were
+deselected. It took **10.14 s** with eight existing dependency warnings.
+Exact commands, initial failures and their resolution are in
+[TEST.md](../TEST.md#auxiliary-system-h2-batched-factory).
+
+New tests use seeded <=64-shot physical batches, mostly d=3, plus one d=5
+T=2 smoke case. They cover T=1/2/3 zero noise, two-support role swaps and
+data/ancilla resets, single faults on both roles at each stage, persisting
+logical faults, last-survivor oracle, future/oracle isolation, shape/dtype/ID
+overflow guards, fixed-seed/fixed-partition repeatability, unchanged input,
+scalar/partitioned decode equivalence, cache identity and graph/sampler counts.
+Failing causal contracts, unsupported family/frame conventions and residual
+recovery are rejected. Constructor tests forbid map/simulator/decoder/sampler
+construction after compilation, rather than asserting timings.
+
+Independent reference tests run old callbacks/global correction maps on the
+same saved noisy/fault records and compare both Pauli frame components and
+labels. Exact coordinate comparisons canonicalize the reference reset frame
+using reference-only R-before-RX sentinels; the physical circuit is unchanged.
+Unmodified legacy reset maps must give identical labels and frames equal
+modulo stabilizers. This records the previously invisible RX frame-gauge
+difference instead of weakening comparisons to labels alone. The H2 guide
+documents the convention and the test log retains the initial failures.
+
+No H3 algorithm, benchmark sweep, full pytest suite, general fault-tolerance
+proof, or performance measurement was added/run by H2.

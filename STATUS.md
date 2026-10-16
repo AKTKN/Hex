@@ -839,3 +839,88 @@ support tuples are immutable; handles are for synchronous worker-local reuse.
 
 The parent bench's old exact Hex revision pin is unchanged. Commit and push
 outcome are reported in the H1 handoff; stop after that single H1 commit/push.
+
+## Auxiliary-system H2 batched factory
+
+Date: **2026-10-16 (Asia/Tokyo)**. H2 was separately requested after H1.
+Base: `aaba359358949094c53354e15226312119b5e4c6`, clean tracked
+`auxiliary-system`. Fetch succeeded and local/origin auxiliary refs matched
+before edits. No reset, stash, branch replacement, installation, or bench edit
+was needed. Python/native dependencies remain those recorded in H0.
+
+### Implemented scope
+
+- Fixed positive `T_tel` unrolling on exactly two data/ancilla supports.
+  Initial A-zero/B-plus preparations use independent depths; each consumed
+  support is reset/reprepared plus before its next role. Gates remain
+  `CX(fresh_plus,memory)` with noisy consumed-block Z readout, no post-gate SE,
+  and only one final ideal Z oracle on the actual last survivor.
+- Generalized signed check propagation/record ledgers and prefix/strict-DEM
+  validation. Added causal stage/role/preparation/byproduct guards. Ad hoc
+  comparisons against the H1 builder confirm byte-identical T=1 circuits and
+  equal ledger/stage/signed flows at three d=3/5 configurations.
+- `PreparationFramePlan.bind` shares cached local preparation circuit,
+  decoders, converters and sparse maps across repeated same-support refreshes;
+  at most three preparation templates are built per case.
+- `simulation/factory.py`: frozen compiled configuration and cache key,
+  one native compiled sampler, deterministic causal batched frame decoder,
+  operational/result dataclasses and sample/decode APIs. Results carry uint64
+  shot IDs, boolean per-stage syndromes/raw and corrected byproducts/resolved
+  frames, stage IDs, and one last-oracle logical-error label. `gaps=None`
+  reserves the future confidence field without implementing H3.
+- `decoders/factory_surface.py`: cached surface Hamming transforms and
+  distinct online/terminal matching handles, with residual recovery guards.
+  Surface assumptions are outside the generic causal stage loop. Unsupported
+  families/conventions, nonbinary/wrong-width batches and ID overflow fail.
+- Physical trajectories are sampled once; corrections only update software
+  interpretation. Stage j reads local prep/readout and previous frame, never
+  future or oracle records or sampled fault truth. No per-shot circuit,
+  sampler, graph, deterministic simulator or map construction occurs.
+- Explicit cache keys cover code/distance, p/noise, depths/T, full circuit
+  hash, frame/prior/label/decoder conventions, seed and library versions.
+  Handles are synchronous and worker-local; no global cache or new output
+  runner is introduced. New guide and affected package/test documents describe
+  exact fields, equations, reset convention, lifetime, and limits.
+
+### Validation and resolved discrepancy
+
+The initial H2 run had **9 failures and 21 passes**. Eight frame/byproduct
+comparisons revealed that legacy deterministic RX propagation retains an
+unobservable X component while the new boundary frame clears both X/Z.
+Terminal labels already agreed; this was a coordinate convention difference,
+not permission to drop frame validation. Canonical reference maps now add
+reference-only R-before-RX sentinels, while additional unmodified legacy replay
+tests require equal labels and frame differences with zero syndrome/logical
+action. Production physical circuits/sampling remain unchanged. The ninth
+failure was unsupported Stim circuit item assignment in a hash-guard test;
+the test now uses circuit concatenation.
+
+Subsequent runs passed **32 H2 tests**, then **73 combined H2/H1 tests**, then
+the final **111 targeted tests**, including **34 H2**, **41 H1** and 36 legacy
+regressions. Two inherited statistical-LER cases were excluded; eight existing
+dependency warnings remain. Exact commands, durations, import and integrity
+checks are in [TEST.md](TEST.md#auxiliary-system-h2-batched-factory).
+New physical batches use <=64 seeded shots, mostly d=3 and one d=5 smoke case.
+Tests cover T=1/2/3, both roles at every stage, logical faults through later
+teleportations, both Pauli-frame components, oracle/future independence,
+fixed-seed/fixed-partition repeatability, scalar/batch/partitioned equality,
+input immutability, dtypes/ID limits, causal/failure guards and constructor
+counts (14 matching objects, one sampler for a fresh T=3 case; none during
+sampling/decoding).
+
+### Limits and next boundary
+
+**H3 has not started.** There is no logical gap algorithm, projected prior,
+`create_codecapacity_dem` option, quality-dependent sampling, threshold/cost
+selection, YAML/Parquet runner, large Monte Carlo, full-suite run or speed
+benchmark. Spatial online/terminal matching uses Hamming weights. Legacy
+preparation projections/weights remain preserved, not certified as optimal
+conditional priors. Strict DEM and selected fault tests do not establish
+general fault tolerance or paper reproduction.
+
+Frozen configuration does not freeze native RNG/decoder internals or caller
+arrays. Use one object synchronously per worker, leave source plans unchanged,
+and supply unique shot offsets. Same-seed sampling depends on version/platform
+and chunk partition; scalar/batch equality applies to identical saved records.
+The parent bench's existing revision pin and user changes are untouched.
+Commit/push outcome belongs to the H2 handoff; stop after the one H2 commit.

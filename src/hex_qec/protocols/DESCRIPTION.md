@@ -1,8 +1,9 @@
 # `protocols`
 
-H1 adds the independent `FactoryCircuitBuilder`/`FactoryCircuitBundle` and
-`RotatedSurfaceCodeAdapter` exports for a single-stage logical-zero primitive;
-see [DOCS.md](DOCS.md#h1-single-stage-factory). The full Knill/Steane paths
+H1/H2 add independent `FactoryCircuitBuilder`/`FactoryCircuitBundle` and
+`RotatedSurfaceCodeAdapter` exports. The builder's keyword `T_tel=1` now
+supports any positive fixed stage count while reusing exactly two supports;
+see [DOCS.md](DOCS.md#h2-fixed-multi-stage-factory). The full Knill/Steane paths
 described below are unchanged, including their noisy final readout.
 
 This package contains the fixed-round Knill and Steane builders plus a

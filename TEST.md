@@ -1136,3 +1136,78 @@ No H2 sampler/runner, multi-stage recycling, public terminal label, gap,
 projected priors, full pytest suite, paper reproduction, or performance sweep
 was implemented/run in H1. Test-only online/oracle recovery helpers do not
 constitute production result APIs.
+
+## Auxiliary-system H2 batched factory
+
+Date: 2026-10-16 (Asia/Tokyo); branch `auxiliary-system`, base `aaba3593`.
+Same Python 3.12.7/source-path environment as H0/H1; commands ran from Hex.
+
+1. Small structural/sampling probes: d=3, T=1/2/3, r_0=1, r_plus=2.
+   Built strict signed-flow/DEM-validated circuits with 34 qubits and
+   42/67/92 measurements. Zero-noise compiled batches of 64 shots at seed 1729
+   had zero logical errors and corrected syndromes, with expected stage shapes.
+
+2. `PYTHONPATH=src python -m pytest -q tests/test_factory_batch.py`
+
+   Initial result: **9 failed, 21 passed**, eight warnings, **12.14 s**.
+   Eight exact frame/byproduct reference comparisons failed at repeated RX
+   resets: the legacy deterministic propagator retained an invisible X frame
+   component; labels agreed and frame differences had zero syndrome/logical
+   action. The reference now canonicalizes map propagation with reference-only
+   R-before-RX sentinels. Additional unmodified replay tests verify physical
+   equivalence and labels. No sampling circuit was changed for this fix.
+   One hash-test failure used unsupported Stim item assignment; corrected to
+   circuit concatenation. Follow-up: **32 passed**, eight warnings,
+   **13.88 s**.
+
+3. `PYTHONPATH=src python -m pytest -q tests/test_factory_batch.py tests/test_factory_circuit.py`
+
+   PASS after surface-readout separation and causal guards: **73 passed**,
+   eight existing dependency deprecation warnings, **16.22 s** (before two
+   additional causal-contract/recovery-failure tests).
+
+4. Final targeted regression command:
+
+   ```bash
+   PYTHONPATH=src python -m pytest -q \
+     tests/test_factory_batch.py \
+     tests/test_factory_circuit.py \
+     tests/test_phase1_decoder_adapters.py \
+     tests/test_phase2_results.py \
+     tests/test_phase4_adaptive_state_prep.py \
+     tests/test_phase3_stateful_backend.py \
+     tests/test_phase5_confidence_adaptive.py::test_fixed_knill_surface_code_keyword_is_backward_compatible \
+     -k 'not ler_is_statistically_compatible'
+   ```
+
+   PASS: **111 passed**, **2 deselected**, **8 warnings**, **10.14 s**.
+   Includes all 34 H2, 41 H1 and 36 relevant legacy regressions. The two
+   inherited statistical-LER cases were deliberately excluded; no production
+   Monte Carlo or full suite was run. New physical batches contain <=64 shots.
+   Tests cover oracle/future perturbations, both Pauli reference maps, role
+   swaps/resets, per-role per-stage single faults and logical faults, one
+   last-survivor oracle, deterministic decoding, seed/chunk repeatability,
+   uint64/bool shapes and guards, no input mutation, unsupported conventions,
+   residual recovery, exact cache identity and setup-only constructors.
+
+5. H1 compatibility probe: loaded the H1 builder with
+   `git show HEAD:src/hex_qec/protocols/logical_zero_factory.py` into a separate
+   Python module and compared new T=1 output. PASS: identical circuit text,
+   ledger, stage descriptors and signed flows for `(d,p,r_0,r_plus)` equal to
+   `(3,0,1,2)`, `(3,0.002,2,2)`, and `(5,0.002,1,1)`. Metadata intentionally
+   versions the frame/terminal conventions and generalizes CNOT role names.
+
+6. `python -m compileall -q src tests`, `git diff --check`, and fresh imports:
+
+   ```bash
+   PYTHONPATH=src python -c 'from hex_qec.simulation.factory import CompiledFactory; from hex_qec.protocols import FactoryCircuitBuilder; print("factory-first import: PASS")'
+   PYTHONPATH=src python -c 'from hex_qec.decoders.factory_surface import SurfaceFactoryReadout; from hex_qec.protocols import FactoryCircuitBuilder; from hex_qec.simulation import CompiledFactory; print("readout-first import: PASS")'
+   ```
+
+   PASS: compilation, whitespace and both import orders. Documentation
+   integrity checks confirm changed local links/anchors, DOCS coverage of all
+   package directories, preserved historical AGENTS/STATUS/TEST prefixes,
+   byte-identical scientific specification, and no experiment outputs.
+
+No H3 gap, projected priors, threshold selection, full suite, paper
+reproduction, or timing benchmark was implemented/run in H2.

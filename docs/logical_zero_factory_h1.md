@@ -1,5 +1,9 @@
 # H1: single-stage logical-zero factory
 
+This is the H1 checkpoint description. [H2](logical_zero_factory_h2.md) now
+provides sampling, stage decoding, terminal labels, and repeated support reuse;
+the default single-stage physical circuit and ledger remain unchanged.
+
 H1 implements a circuit primitive and preparation-frame boundaries for
 `T_tel=1`. It does not provide a factory sampling runner, online stage decoder,
 production logical-error labels, multi-stage reuse, confidence, or projected

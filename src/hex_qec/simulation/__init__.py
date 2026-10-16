@@ -28,12 +28,18 @@ __all__ = [
     "AdaptiveStatePrepExecution",
     "StatefulAdaptiveStatePrepExecutor",
     "StatefulAdaptiveKnillExecutor",
+    "CompiledFactory", "FactoryBatchDecoder", "FactoryBatchResult",
+    "FactoryOperationalBatch", "FactoryCacheKey",
 ]
 
 
 def __getattr__(name):
-    """Lazily expose adaptive execution to avoid the package import cycle."""
+    """Lazily expose factory/adaptive execution to avoid package import cycles."""
 
+    if name in {"CompiledFactory", "FactoryBatchDecoder", "FactoryBatchResult",
+                "FactoryOperationalBatch", "FactoryCacheKey"}:
+        from . import factory
+        return getattr(factory, name)
     if name in {
         "AdaptiveStatePrepExecution",
         "StatefulAdaptiveStatePrepExecutor",

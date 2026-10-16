@@ -37,7 +37,27 @@ channel; do not mix those conventions with the BP-LSD factory.
 
 Adapter tests passed in H0 (part of the 15-test adapter/result command).
 Cluster-statistics and confidence-policy tests exist but were not rerun in H0;
-see [tests/DOCS.md](../../../tests/DOCS.md). No decoder source changed.
+see [tests/DOCS.md](../../../tests/DOCS.md). H0 changed no decoder source.
+
+## H2 surface factory readout
+
+`factory_surface.py` provides `SurfaceFactoryReadout(code,z_checks)` for the
+causal factory executor. This surface-specific boundary rejects other code
+families, caches H_Z/logical transforms, and builds separate online/terminal
+PyMatching Hamming decoders. It does not change weights per shot or expose
+terminal data to the online handle.
+
+`syndrome(m)` returns `m @ H_Z.T mod 2`; `recover(s)` returns a boolean
+`(shots,n)` correction and rejects nonzero residual syndromes.
+`logical_parity(m)` returns `(shots,) bool`, and `byproduct_frame(b)` returns
+`b[:,None] & L_X`. `evaluate_terminal(oracle,frame_x)` interprets the ideal
+readout, uses only the evaluation decoder, checks recovery consistency and
+returns logical-Z mismatch. These are deterministic batch transforms with
+cached handles and no physical sampling. The stage loop and production
+result API live in [simulation](../simulation/DOCS.md); the
+[H2 guide](../../../docs/logical_zero_factory_h2.md) specifies the full frame
+equations, noise and label convention. This is ordinary spatial recovery;
+no homology-sector gap or circuit-informed prior is implemented here.
 
 ## Proposed only: gap and priors
 

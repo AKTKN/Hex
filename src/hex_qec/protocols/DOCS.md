@@ -42,27 +42,35 @@ Existing fixed/adaptive endpoint tests are listed in
 [tests/DOCS.md](../../../tests/DOCS.md); H0 did not rerun protocol Monte Carlo
 or establish agreement with a paper figure.
 
-## H1 single-stage factory
+## H2 fixed multi-stage factory
 
-`FactoryCircuitBuilder(adapter, PreparationPlan(r_0,r_plus), physical_error)`
+`FactoryCircuitBuilder(adapter, PreparationPlan(r_0,r_plus), physical_error, *, T_tel=1)`
 and `FactoryCircuitBundle` are exported alongside `RotatedSurfaceCodeAdapter`.
-The new `logical_zero_factory.py` builds exactly one stage: noisy zero A and
-plus B preparation, `CX(B,A)`, noisy destructive Z readout of A, and one ideal
-Z evaluation readout of B. Both supports include their check ancillas; no
-third data block or post-gate SE is inserted.
+`logical_zero_factory.py` builds a positive fixed number of stages: initial
+noisy zero A and plus B preparation, `CX(B,A)`, noisy destructive Z readout of
+A, then reset/plus-reprepare A and exchange roles. Only the same two complete
+supports and their reset ancillas are reused. Exactly one final ideal Z oracle
+reads the last survivor; no intermediate oracle, third block, or post-gate SE
+is inserted. Default T=1 preserves H1's circuit/ledger/flows.
 
 The bundle carries raw record/stage ranges, a signed CSS check ledger,
 prep-only frame-resolution plans, oracle indices, and read-only metadata.
-`build()` verifies signed flows and a strict operational DEM.
+`build()` verifies signed flows on each prefix, a strict operational DEM,
+alternating roles, causal prep/readout ranges, own-readout byproducts, and
+the last-survivor oracle. Prep templates share native decoders, local
+converters and sparse frame maps across repeated uses on the same support.
 `operational_circuit` excludes the oracle and has no observable annotations;
 raw logical A parity is random and only records the byproduct source.
 
-For raw records the terminal check sign is
-`H_Z*m_A XOR last_Z_A XOR last_Z_B`. After preparation repair, use the
+For the initial raw records the terminal check sign is
+`H_Z*m_A XOR last_Z_A XOR last_Z_B`. Later stages use the propagated signed
+checks of memory and the new plus preparation. After preparation repair, use the
 inferred Pauli frames and repaired signs described in
-[the H1 guide](../../../docs/logical_zero_factory_h1.md). The helper does not
-sample, decode stages, compute production labels, or implement multi-stage
-reuse. Tests use a separate evaluation-only terminal recovery calculation.
+[the H1 guide](../../../docs/logical_zero_factory_h1.md). Circuit building
+remains separate from execution: `hex_qec.simulation.CompiledFactory` now
+samples/decodes batches and supplies evaluation labels. See
+[the H2 guide](../../../docs/logical_zero_factory_h2.md) for the causal frame
+equations and result shapes.
 
-Full Knill and Fig. 4(d) retain noisy final readout. H2's runner and repeated
-stages, H3 gap, and `create_codecapacity_dem` remain unimplemented.
+Full Knill and Fig. 4(d) retain noisy final readout. H3 gap and
+`create_codecapacity_dem` remain unimplemented.

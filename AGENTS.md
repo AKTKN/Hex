@@ -694,3 +694,41 @@ snapshot above is preserved. H1 adds the single-stage factory primitive;
   strict signed-flow/DEM gates, and both random byproduct branches when later
   phases add execution. Do not call these small structural/fault probes a
   fault-tolerance proof or a paper reproduction.
+
+## Auxiliary-system H2 checkpoint
+
+H2 was explicitly requested on 2026-10-16 after H1. The H0/H1 snapshots above
+are historical; this checkpoint supersedes their statements that H2 is absent.
+**Stop after H2 commit/push; H3 has not started.**
+
+- Read [docs/logical_zero_factory_h2.md](docs/logical_zero_factory_h2.md) for
+  the implemented API, equations, shapes, lifecycle and tested limits.
+- The builder accepts `T_tel>=1` and alternates the same two complete supports
+  with reset/plus refresh; T=1 retains H1's physical circuit/ledger/flows.
+  There is still exactly one last-survivor ideal oracle and no post-CNOT SE.
+- `hex_qec.simulation` exports `CompiledFactory`, `FactoryBatchDecoder`,
+  `FactoryOperationalBatch`, `FactoryBatchResult`, and `FactoryCacheKey`.
+  Keep the causal stage loop over batch arrays; sampler/graphs/maps/converters
+  are constructed during setup. `PreparationFramePlan.bind(region)` shares
+  local maps/native handles for later resets on the same physical support.
+- Preserve `canonical_reset_xz_at_stage_boundaries_v1`: refresh clears both
+  old frame components. Legacy deterministic RX propagation can retain an
+  invisible X component. Tests check exact canonical reference coordinates
+  and physical/stabilizer equivalence against unmodified legacy maps; never
+  put the reference-only R-before-RX sentinels into production sampling.
+- The operational decoder accepts exactly the oracle-free prefix. It uses
+  only local prep/readout and previously committed frames. Terminal recovery
+  has a separate matching handle and runs after all operational fields are
+  fixed. `frame_resolved` is estimate consistency, not fault truth/confidence.
+- Surface Hamming transforms/Matching assumptions live in
+  `decoders/factory_surface.py`; unsupported families fail explicitly.
+  Preserve legacy full-history preparation priors without claiming optimality.
+- Frozen compiled configuration owns mutable private native RNG/decoder
+  handles. Use synchronously per worker; do not mutate source plans after
+  compilation, share concurrently, or transport native handles by pickling.
+  Sampling advances RNG; explicit chunk offsets provide unique uint64 IDs.
+  Same seed repeatability requires the same sampling partition/version/platform.
+- Preserve H1's 41 tests and H2's 34 tests, future/oracle isolation, exact
+  saved-record scalar/batch equality and setup-only constructor gates. H2
+  reserves `gaps=None` but computes no score, projected prior or threshold.
+  No general fault-tolerance, paper or speed claim follows from these tests.

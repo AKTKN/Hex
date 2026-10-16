@@ -88,6 +88,15 @@ expressions and repaired check signs must not be mixed. H1 validates both
 frame maps exactly against the legacy Pauli-to-measurement machinery and
 legacy CSS correction arrays, including p=0 intrinsic sign randomness.
 
-See [the H1 guide](../../../docs/logical_zero_factory_h1.md) for equations,
-field semantics, cache lifetime, and scope. There is no H2 factory runner,
-stage decoder, repeated-support execution, or production logical-label API.
+See [the H1 guide](../../../docs/logical_zero_factory_h1.md) for preparation
+equations and field semantics. H2 adds `PreparationFramePlan.bind(region)`:
+a shallow view changing only the absolute record range, validating its width,
+and sharing local circuit, decoders, converters and sparse frame maps. It
+does not recompile or remap the same physical support. Use synchronously
+within one worker and do not mutate plans after compilation.
+
+The H2 frame convention `canonical_reset_xz_at_stage_boundaries_v1` discards
+both components on refresh reset. Legacy deterministic RX propagation may
+retain an invisible X component; exact canonical-map and unmodified physical
+equivalence tests cover the distinction. Sampling/stage processing lives in
+`simulation/factory.py`, with [equations, cache/result semantics and limits](../../../docs/logical_zero_factory_h2.md).

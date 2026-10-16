@@ -4,6 +4,9 @@ H1 additionally provides factory code/record/flow contracts and reusable
 preparation-frame plans in `factory.py`; see
 [DOCS.md](DOCS.md#h1-contracts-and-preparation-frame-maps). The legacy module
 and simulation descriptions below retain their existing semantics.
+H2 adds `PreparationFramePlan.bind(region)` to share these maps/converters and
+native decoders across refresh events on the same support, with canonical
+X/Z frame clearing at reset; execution lives in `hex_qec.simulation`.
 
 This package defines the current module objects, common gadget constructors,
 structured module-output normalization, and the static execution engine.  The

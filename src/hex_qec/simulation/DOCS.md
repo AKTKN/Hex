@@ -44,13 +44,45 @@ recorded in [TEST.md](../../../TEST.md#auxiliary-system-h0-documentation-baselin
 General dynamic causal-detector support and branch compaction remain limited.
 Equal seeds across compiled and stateful backends do not imply paired faults.
 
-## Proposed only
+## H2 compiled factory batches
 
-Future [factory execution](../../../docs/README.md) will sample fixed unrolled
-circuits in chunks and decode stages vectorially with reusable samplers,
-graphs, sparse maps, and decoders. Stage `j` must exclude future records and
-the terminal ideal oracle, even when the whole shot was sampled in advance.
-Threshold rejection/cost accounting is post-processing of fixed trajectories.
-No `CompiledFactory`, `FactoryBatchDecoder`, multi-stage two-block reuse, or
-factory confidence result was added in H0. Cache configuration must eventually
-include circuit/noise/preparation/depth/prior/frame conventions explicitly.
+`factory.py` supplies public lazy exports `CompiledFactory`,
+`FactoryBatchDecoder`, `FactoryOperationalBatch`, `FactoryBatchResult`, and
+`FactoryCacheKey`. `CompiledFactory.from_bundle(bundle, seed=None)` copies and
+hash-checks a validated factory circuit, builds one cached decoder and one
+native sampler. `sample(shots, shot_id_start=0)` draws and decodes one batch;
+`sample_measurements(shots)` and `decode(records, shot_id_start=0)` separate
+those operations. The RNG advances on each sampling call; IDs use explicit
+caller offsets with uint64 overflow guards.
+
+`decode_operational(records, shot_id_start=0)` accepts exactly the oracle-free
+prefix. Stage j reads only its local prep/readout slices and prior frame,
+using batch arrays rather than per-shot objects. It resolves legacy full-history
+prep repair, applies CNOT frame propagation, infers the spatial Hamming logical
+byproduct, then commits the output frame. Resets clear old X/Z frames. The
+surface transforms/matching assumptions live in the decoder adapter.
+`decode` fixes these operational fields before a separate terminal evaluator
+reads the sole last ideal Z oracle. No physical correction or resampling is
+performed. Raw detectors retain their original physical sign semantics.
+
+Results contain `(shots,T,m_z)` corrected pre-recovery syndromes, `(shots,T)`
+raw/corrected byproducts and frame consistency, `(shots,T,n)` X/Z output frames,
+tuple stage IDs and `(shots,) uint64` shot IDs. Full results add
+`(shots,) bool` logical-error labels and `gaps=None`. Frame consistency is not
+truth/confidence. Inputs are binary, nonempty, exact-width, and unmodified.
+
+The key covers code/d/p/noise/depth/T/circuit hash/frame/prior/label policy,
+seed and native-library versions. Local preparation converters/maps and
+decoder handles are shared across repeated same-support refreshes; spatial
+matrices and separate online/terminal matchings are cached. No expensive
+objects are created inside sampling/decoding. Frozen configuration owns
+mutable native handles: keep it synchronous and worker-local, do not mutate
+source plans, and construct independently per worker. Equal seeds require
+the same Stim version/platform and sampling chunk partition for repeatability;
+scalar/batch equivalence concerns decoding identical saved records.
+
+See [the H2 guide](../../../docs/logical_zero_factory_h2.md) for exact frame
+equations, reset-gauge reference tests, fields and lifecycle. Tests cover
+future/oracle isolation, fault propagation, all dtypes, scalar/batch equality,
+and constructor counts. H3 gap, projected priors and threshold/cost analysis
+remain future work. No benchmark filesystem/YAML/Parquet behavior is included.

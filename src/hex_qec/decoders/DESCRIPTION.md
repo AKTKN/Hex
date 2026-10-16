@@ -4,6 +4,11 @@ This package contains the decoder result type, compatibility adapters, an
 optional BP-LSD adapter with a cluster-LLR soft output, and example
 `css_detector_module.confidence_aggregator` functions.
 
+H2 adds the surface-specific `factory_surface.SurfaceFactoryReadout` with
+cached spatial Hamming transforms and distinct online/evaluation matchings.
+See [DOCS.md](DOCS.md#h2-surface-factory-readout) for residual guards, shapes,
+and the causal factory boundary; this adapter computes no logical gap.
+
 ## `DecodeResult`
 
 `DecodeResult` is a dataclass with:

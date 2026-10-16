@@ -5,6 +5,7 @@ here. All array transforms use a shot-first batch and GF(2) arithmetic.
 """
 
 from dataclasses import dataclass
+import copy
 from numbers import Integral
 from typing import Protocol
 
@@ -13,6 +14,9 @@ import stim
 from scipy.sparse import csc_matrix, csr_matrix
 
 from .modularised_circuit import css_detector_module
+
+
+FACTORY_FRAME_CONVENTION = "canonical_reset_xz_at_stage_boundaries_v1"
 
 
 def _positive_integer(value: int, name: str) -> None:
@@ -275,6 +279,18 @@ class PreparationFramePlan:
         identity, zero = np.eye(n, dtype=np.uint8), np.zeros((n, n), dtype=np.uint8)
         self.x_map = csc_matrix(np.vstack((xx, zx, zero, identity)))
         self.z_map = csc_matrix(np.vstack((xz, zz, identity, zero)))
+
+    def bind(self, region: CircuitRegion) -> "PreparationFramePlan":
+        """Bind the same local circuit/maps/decoders to a later reset event.
+
+        Only the absolute record region differs. Native handles are shared
+        for synchronous use within one compiled factory/worker.
+        """
+        if region.measurements.stop - region.measurements.start != self.module.num_measurements:
+            raise ValueError("preparation region has the wrong measurement width")
+        bound = copy.copy(self)
+        bound.region = region
+        return bound
 
     def resolve(self, measurements: np.ndarray) -> PreparationFrame:
         batch = np.asarray(measurements)

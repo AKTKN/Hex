@@ -3,6 +3,12 @@
 This package contains the Phase 3 stateful fixed-round backend and the
 stateful two-level adaptive state-preparation/Knill execution paths.
 
+H2 additionally exports `CompiledFactory`, `FactoryBatchDecoder`,
+`FactoryOperationalBatch`, `FactoryBatchResult`, and `FactoryCacheKey` for a
+separate static multi-stage factory. See [DOCS.md](DOCS.md#h2-compiled-factory-batches)
+and [the H2 guide](../../../docs/logical_zero_factory_h2.md) for sampling once,
+causal batched frame updates, terminal labels, and worker-local cache lifetime.
+
 ## Opt-in wall-time instrumentation
 
 `WallTimeProfiler` and `TimingEvent` in `hex_qec.simulation.profiling` provide
