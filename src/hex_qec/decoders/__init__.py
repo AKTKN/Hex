@@ -10,6 +10,7 @@ from .adapters import (
     make_bplsd_decoder_generator,
 )
 from .aggregators import all_components_max_confidence, dem_only_max_confidence
+from .surface_gap import HomologyGapBatch, SurfaceMWPMHomologyGap
 
 __all__ = [
     "CSSInnerDecodeResults",
@@ -24,4 +25,6 @@ __all__ = [
     "make_bplsd_decoder_generator",
     "dem_only_max_confidence",
     "all_components_max_confidence",
+    "HomologyGapBatch",
+    "SurfaceMWPMHomologyGap",
 ]

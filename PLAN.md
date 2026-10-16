@@ -901,3 +901,13 @@ The first milestone is complete when all of the following hold:
 14. remaining performance issues are recorded in `STATUS.md`/`FUTURE.md`.
 
 Only after this milestone should the project focus on large-scale confidence/round-count physics studies.
+
+## Auxiliary-system H3 dependency declaration
+
+The separately requested H3 phase uses [NetworkX](https://networkx.org) for
+setup-time connectedness/planarity checks of the spatial two-boundary graph.
+It is now a direct core requirement (`networkx>=2.8` in `pyproject.toml`).
+NetworkX 3.3 was already installed and required transitively by PyMatching
+2.3.1; no installation/upgrade occurred. The current H3 implementation and
+limits are described in [docs/logical_zero_factory_h3.md](docs/logical_zero_factory_h3.md).
+This addition does not start the projected-prior work of H4.

@@ -924,3 +924,86 @@ and supply unique shot offsets. Same-seed sampling depends on version/platform
 and chunk partition; scalar/batch equality applies to identical saved records.
 The parent bench's existing revision pin and user changes are untouched.
 Commit/push outcome belongs to the H2 handoff; stop after the one H2 commit.
+
+## Auxiliary-system H3 surface logical gap
+
+Date: **2026-10-16 (Asia/Tokyo)**. H3 was separately requested after H2.
+Base: `076a8345421bd47bbc7e1919fa44c91ec90d19c0`, clean tracked
+`auxiliary-system`; fetch succeeded and local/origin refs agreed. No reset,
+stash, branch replacement, package installation or bench edit occurred.
+The H0/H2 environment is unchanged; NetworkX 3.3 was already a PyMatching
+dependency and is now directly declared (`networkx>=2.8`) for planarity.
+
+### Implemented scope
+
+- Reviewed all required `decoder-confidence` reference files and FUTURE
+  warnings. Their append-a-logical-row/per-shot rebuild approach is not reused
+  or treated as verified. The new module imports no code from that checkout.
+- `decoders/surface_gap.py`: public `SurfaceMWPMHomologyGap` and frozen
+  `HomologyGapBatch`. A deterministic GF(2) internal potential determines
+  two extra constrained detector rows B0/B1. Every lifted column has degree
+  two; the lifted syndrome fixes the requested logical sector by the proven
+  identity `L=u^T H XOR B1`. One cached graph handles both classes in two
+  native batch calls. Returned data include both original-weight costs,
+  corrections, nonnegative gap, best class and explicit units.
+- Setup validates binary/shape/degree, potential, connected planar lift,
+  positive finite weights, native maximum/dynamic range, and constrained
+  boundary interpretation. Zero-detector events, hyperedges, inconsistent
+  cycles, unsupported topology and multiple observables fail explicitly.
+  Parallel-edge minimum representatives preserve sector costs/output width.
+- `SurfaceFactoryReadout` caches a separate gap graph using unit Hamming
+  weights for all physical p, including the explicit finite p=0 rule.
+  Factory results fill `(shots,T) float64` gaps and add `gap_units`; the cache
+  key adds a gap policy. Every score uses its current corrected syndrome
+  before recovery. H2's other operational/frame/terminal-label semantics and
+  one final oracle remain unchanged; no score influences quantum sampling.
+- Added 37 focused tests, updated H2 gap/count expectations, a complete H3
+  API/proof/precision guide, package/test docs and append-only history.
+
+### Validation and resolved discrepancies
+
+Initial H3 tests: **2 failed, 34 passed**, ten warnings, **5.97 s**. Two
+weighted cases tripped an overly tight native-cost equality guard. A probe
+found native discretization differences up to `2.15e-7`, while edge corrections
+had the correct original-weight costs. Version-pinned PyMatching source
+confirmed noninteger scaling/rounding. Costs remain recomputed in original
+weights; the guard now uses a conservative n-edge rounding allowance and
+rejects extreme dynamic range. A test-only unsigned negation also caused
+two runtime warnings/NaN in the posterior comparison; it now sums in float64
+and asserts a finite comparison. Neither issue was hidden by weakening the
+exhaustive sector-cost oracle.
+
+Then H3+H2 passed **71 tests** in **20.03 s**, eight existing warnings.
+The targeted H3/H2/H1/legacy run passed **148 tests**, two statistical
+cases deselected, eight warnings, **24.50 s**. The isolated H3 subset
+passed **37 tests** in **6.04 s**. Final review added rejection of an absolute
+weight scale too small for finite native normalization, with a focused test
+case. The full targeted command then passed **148 tests**, two deselected,
+eight warnings, **25.89 s**. Exact commands are in
+[TEST.md](TEST.md#auxiliary-system-h3-surface-logical-gap).
+
+The d=3 classical oracle enumerates all 512 physical error vectors for both
+sector minima at all 16 syndromes, four weight vectors and two logical-row
+representatives. Tests verify costs, logical class, degree/potential/parity,
+ties and guards. Integration tests compare every stage to enumeration and
+perturb future/oracle/raw logical records. Zero-noise d=3 T=1/2/3 and d=5 T=2
+give gap d; new physical batches use <=32 shots. Constructor tests enforce
+15 Matching objects/one sampler for fresh T=3, none in sampling/decoding.
+Saved-record H2 probes at T=1/2/3 preserve all prior operational fields and
+terminal labels. Compilation, fresh import orders, TOML and documentation
+integrity checks passed as detailed in TEST.md.
+
+### Limits and next boundary
+
+**H4 has not started.** Factory gaps use the spatial independent-edge Hamming
+model, not a circuit-informed or exact conditional posterior after nonlinear
+prep repair. Min-sum sector differences are not posterior log-odds. The lift
+reduction is exact, but native noninteger weights have finite resolution and
+arbitrarily close weighted minima are not certified; unit factory weights
+avoid that ambiguity. Native objects remain synchronous/worker-local.
+
+No projected prior, `create_codecapacity_dem`, threshold/abort/retry path,
+YAML/Parquet runner, full suite, large Monte Carlo, speed benchmark, general
+fault-tolerance proof or paper reproduction was implemented/run. Scientific
+specification bytes, legacy physical circuits/decoders and parent user changes
+are untouched. Commit/push outcome is reported in the H3 handoff.

@@ -1211,3 +1211,83 @@ Same Python 3.12.7/source-path environment as H0/H1; commands ran from Hex.
 
 No H3 gap, projected priors, threshold selection, full suite, paper
 reproduction, or timing benchmark was implemented/run in H2.
+
+## Auxiliary-system H3 surface logical gap
+
+Date: 2026-10-16 (Asia/Tokyo); branch `auxiliary-system`, base `076a8345`.
+Python/native versions remain the H0/H2 environment. NetworkX 3.3 was already
+installed through PyMatching; its direct TOML requirement needs no install.
+
+1. Read the required `_forced_gap.py`, `_constraints.py`, `_decoder_adapter.py`
+   and `FUTURE.md` under the separate `decoder-confidence` checkout. Verified
+   the installed PyMatching 2.3.1 `from_check_matrix`, `decode_batch` with
+   `return_weights=True`, and `ensure_num_fault_ids` API/docstrings, plus
+   official API/version-pinned weight conversion sources. Small d=3/5 probes
+   confirmed connected planar lifts and finite nonuniform sector costs.
+
+2. `PYTHONPATH=src python -m pytest -q tests/test_surface_gap.py`
+
+   Initial result: **2 failed, 34 passed**, **10 warnings**, **5.97 s**.
+   Two nonuniform-weight cases failed the native-cost comparison guard;
+   a diagnostic found <=`2.15e-7` differences from native weight rounding.
+   The implementation still recomputes costs in original weights, now checks
+   native costs with an n-edge rounding allowance and rejects unsupported
+   dynamic range. The posterior comparison helper also emitted two warnings:
+   unsigned negation overflowed, giving NaN. Fixed to float64 sum and added a
+   finite-value assertion. The exhaustive cost/class oracle is unchanged.
+
+3. `PYTHONPATH=src python -m pytest -q tests/test_surface_gap.py tests/test_factory_batch.py`
+
+   PASS: **71 passed**, eight existing dependency warnings, **20.03 s**.
+
+4. Final targeted command after adding the bad-native-weight guard test:
+
+   ```bash
+   PYTHONPATH=src python -m pytest -q \
+     tests/test_surface_gap.py \
+     tests/test_factory_batch.py \
+     tests/test_factory_circuit.py \
+     tests/test_phase1_decoder_adapters.py \
+     tests/test_phase2_results.py \
+     tests/test_phase4_adaptive_state_prep.py \
+     tests/test_phase3_stateful_backend.py \
+     tests/test_phase5_confidence_adaptive.py::test_fixed_knill_surface_code_keyword_is_backward_compatible \
+     -k 'not ler_is_statistically_compatible'
+   ```
+
+   PASS: **148 passed**, **2 deselected**, **8 warnings**, **24.50 s**.
+   Includes 37 H3, 34 H2, 41 H1 and 36 legacy tests. The two inherited
+   statistical-LER cases remain excluded. Final isolated fast subset using
+   command 2: **37 passed**, eight warnings, **6.04 s**.
+
+   Final review added a native normalization-overflow guard and its tiny-weight
+   test case. Reran the full command: **148 passed**, two deselected, eight
+   warnings, **25.89 s**. No existing frame or score expectation changed.
+
+   Exactness tests enumerate all d=3 `2^9` errors as a classical oracle and
+   query 16 unique syndromes, four weight vectors and two logical-row gauges.
+   They check both costs, gap, class, correction constraints, nonzero
+   potentials, boundary parity, exact ties, parallel merging/width, invalid
+   graph/observable/weight/native paths, posterior distinction, cache identity,
+   two native batch calls and scalar/batch equality. Physical factory tests
+   use <=32 seeded shots, stage-wise exhaustive scores, future/oracle
+   perturbations, raw logical parity independence, and p=0 d=3 T=1/2/3,
+   d=5 T=2 finite gap d. H2 constructor gates now expect 15 matchings/one
+   sampler, with no construction during sampling/decoding.
+
+5. H2 compatibility probe: loaded
+   `git show HEAD:src/hex_qec/simulation/factory.py` into a separate module
+   and decoded the same saved 32-shot records with old/new stage loops.
+   PASS: all `FactoryOperationalBatch` fields and terminal labels equal for
+   `(T,p)=(1,0),(2,0.02),(3,0.02)`, d=3, both depths 2, seed 721. Only the new
+   score fields differ. No physical builder/noise/correction path was changed.
+
+6. `python -m compileall -q src tests`, `git diff --check`, TOML parsing and
+   fresh gap-first/factory-first imports passed. Documentation integrity
+   checks verify changed local links/anchors, package DOCS coverage, unchanged
+   AGENTS/STATUS/TEST historical prefixes and byte-identical scientific spec.
+   Parent bench status remains its pre-existing user edits, with no generated
+   experiment files in the Hex diff.
+
+No H4 prior model, threshold selection, full suite, large Monte Carlo, speed
+benchmark, general fault-tolerance proof or paper reproduction was run.

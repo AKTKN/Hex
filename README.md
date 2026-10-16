@@ -1,10 +1,11 @@
 # Hex
 
-The `auxiliary-system` branch also provides an H2 logical-zero factory with
+The `auxiliary-system` branch also provides an H3 logical-zero factory with
 fixed multi-stage two-block reuse, compiled batch sampling, causal Pauli-frame
-decoding, and terminal evaluation labels. See
-[the factory API guide](docs/logical_zero_factory_h2.md) for usage,
-noise/oracle conventions, tested boundaries, and the remaining H3+ work.
+decoding, terminal evaluation labels, and per-stage surface MWPM logical gaps.
+See [the gap guide](docs/logical_zero_factory_h3.md) and
+[the execution guide](docs/logical_zero_factory_h2.md) for usage,
+noise/oracle conventions, tested boundaries, and the remaining H4+ work.
 ### Note: This repository is modified version of https://github.com/ewanmurphy/Hex. 
 `hex_qec` is a Python tool for building fault-tolerant quantum error-correction protocols from reusable circuit modules.
 

@@ -13,6 +13,7 @@ dependencies = [
     "stimbposd>=0.1.0",
     "ldpc>=2,<3",
     "pymatching>2.0",
+    "networkx>=2.8",
 ]
 
 [project.optional-dependencies]

@@ -7,7 +7,13 @@ optional BP-LSD adapter with a cluster-LLR soft output, and example
 H2 adds the surface-specific `factory_surface.SurfaceFactoryReadout` with
 cached spatial Hamming transforms and distinct online/evaluation matchings.
 See [DOCS.md](DOCS.md#h2-surface-factory-readout) for residual guards, shapes,
-and the causal factory boundary; this adapter computes no logical gap.
+and the causal factory boundary. H3 adds `SurfaceMWPMHomologyGap` and
+`HomologyGapBatch` in `surface_gap.py`, with one cached two-boundary graph,
+two native batch decodes, both sector costs and a nonnegative min-sum score.
+See [DOCS.md](DOCS.md#h3-surface-homology-gap) and the
+[H3 guide](../../../docs/logical_zero_factory_h3.md) for supported topology,
+weights, units, native precision and exhaustive validation. Factory scoring
+uses a distinct cached graph and preserves the H2 recovery/frame behavior.
 
 ## `DecodeResult`
 

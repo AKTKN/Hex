@@ -72,5 +72,7 @@ samples/decodes batches and supplies evaluation labels. See
 [the H2 guide](../../../docs/logical_zero_factory_h2.md) for the causal frame
 equations and result shapes.
 
-Full Knill and Fig. 4(d) retain noisy final readout. H3 gap and
-`create_codecapacity_dem` remain unimplemented.
+Full Knill and Fig. 4(d) retain noisy final readout. H3's
+[spatial sector gap](../../../docs/logical_zero_factory_h3.md) is now supplied
+by the separate decoder/executor. `create_codecapacity_dem` and circuit-informed
+projected priors remain unimplemented.

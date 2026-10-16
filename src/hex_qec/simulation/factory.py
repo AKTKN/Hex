@@ -38,6 +38,7 @@ class FactoryCacheKey:
     decoder_policy: str = "factory_causal_hamming_v1"
     stim_version: str = stim.__version__
     pymatching_version: str = pymatching.__version__
+    gap_policy: str = "surface_two_boundary_hamming_v1"
 
 
 @dataclass(frozen=True)
@@ -64,12 +65,14 @@ class FactoryOperationalBatch:
 class FactoryBatchResult(FactoryOperationalBatch):
     """Operational data plus one evaluation-only terminal logical-error label.
 
-    logical_error is bool (shots,). H2 leaves gaps=None; no confidence metric
-    or threshold is evaluated. H3 can fill (shots,T) scores independently.
+    logical_error is bool (shots,). H3 populates float64 gaps (shots,T) in
+    gap_units. No threshold or postselection is evaluated. Defaults retain
+    compatibility with callers constructing the former H2 result directly.
     """
 
     logical_error: np.ndarray
     gaps: np.ndarray | None = None
+    gap_units: str = "hamming_weight"
 
 
 def _validate_shot_ids(start: int, shots: int) -> None:
@@ -112,6 +115,10 @@ class FactoryBatchDecoder:
     def decode_operational(self, measurements: np.ndarray, *,
                            shot_id_start: int = 0) -> FactoryOperationalBatch:
         """Decode exactly the operational prefix, excluding the oracle suffix."""
+        return self._decode_operational(measurements, shot_id_start=shot_id_start)[0]
+
+    def _decode_operational(self, measurements: np.ndarray, *,
+                            shot_id_start: int) -> tuple[FactoryOperationalBatch, np.ndarray]:
         batch = _measurement_batch(measurements, self._oracle.start)
         shots, n, stages = len(batch), self._readout.num_data_qubits, len(self._stages)
         _validate_shot_ids(shot_id_start, shots)
@@ -123,6 +130,7 @@ class FactoryBatchDecoder:
         resolved = np.empty((shots, stages), dtype=bool)
         frame_x = np.empty((shots, stages, n), dtype=bool)
         frame_z = np.empty_like(frame_x)
+        gaps = np.empty((shots, stages), dtype=np.float64)
 
         for index, stage in enumerate(self._stages):
             plus_region = stage.preparations[-1]
@@ -132,6 +140,9 @@ class FactoryBatchDecoder:
             raw = batch[:, stage.measurement.measurements.slice]
             measured = raw ^ memory_x ^ plus.x
             syndrome = self._readout.syndrome(measured)
+            # Score only this stage's corrected syndrome, before recovery.
+            # The graph is independent of future records and terminal truth.
+            gaps[:, index] = self._readout.score_gap(syndrome)
             recovery = self._readout.recover(syndrome)
             byproduct = self._readout.logical_parity(measured ^ recovery)
             memory_x = plus.x ^ self._readout.byproduct_frame(byproduct)
@@ -146,14 +157,15 @@ class FactoryBatchDecoder:
         shot_id = np.arange(shots, dtype=np.uint64) + np.uint64(shot_id_start)
         return FactoryOperationalBatch(shot_id, tuple(stage.index for stage in self._stages),
                                        syndromes, raw_byproducts, byproducts, resolved,
-                                       frame_x, frame_z)
+                                       frame_x, frame_z), gaps
 
     def decode(self, measurements: np.ndarray, *, shot_id_start: int = 0) -> FactoryBatchResult:
         """Decode fixed physical records once; labels cannot affect earlier fields."""
         batch = _measurement_batch(measurements, self._width)
-        operational = self.decode_operational(batch[:, :self._oracle.start], shot_id_start=shot_id_start)
+        operational, gaps = self._decode_operational(batch[:, :self._oracle.start], shot_id_start=shot_id_start)
         error = self._readout.evaluate_terminal(batch[:, self._oracle.slice], operational.output_frame_x[:, -1])
-        return FactoryBatchResult(**vars(operational), logical_error=error)
+        return FactoryBatchResult(**vars(operational), logical_error=error,
+                                  gaps=gaps, gap_units=self._readout.gap_units)
 
 
 def _compile_sampler(circuit: stim.Circuit, seed: int | None):

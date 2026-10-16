@@ -57,7 +57,9 @@ def test_zero_noise_results_and_shapes(T):
     assert not result.corrected_syndromes.any()
     assert result.output_frame_x.shape == result.output_frame_z.shape == (64, T, 9)
     assert result.frame_resolved.all() and result.frame_resolved.shape == (64, T)
-    assert result.gaps is None
+    assert result.gaps.shape == (64, T) and result.gaps.dtype == np.float64
+    assert result.gap_units == "hamming_weight"
+    np.testing.assert_array_equal(result.gaps, 3)
     for name in ("corrected_syndromes", "raw_logical_byproducts", "logical_byproducts",
                  "output_frame_x", "output_frame_z", "frame_resolved"):
         assert getattr(result, name).dtype == np.bool_
@@ -327,7 +329,7 @@ def test_objects_built_once_and_never_constructed_in_decode_or_sample(monkeypatc
     monkeypatch.setattr(implementation, "_compile_sampler", counting_sampler)
     bundle = FactoryCircuitBuilder(RotatedSurfaceCodeAdapter(3), PreparationPlan(2, 2), 0.002, T_tel=3).build()
     compiled = CompiledFactory.from_bundle(bundle, seed=38)
-    assert counts == {"matching": 14, "sampler": 1}  # 3 prep templates * 4, online, oracle
+    assert counts == {"matching": 15, "sampler": 1}  # 3 prep templates * 4, online, oracle, gap
 
     def forbidden(*args, **kwargs):
         raise AssertionError("expensive object initialized while processing shots")
@@ -340,7 +342,7 @@ def test_objects_built_once_and_never_constructed_in_decode_or_sample(monkeypatc
     raw = compiled.sample_measurements(31)
     compiled.decode(raw)
     compiled.decode(raw[:1])
-    assert counts == {"matching": 14, "sampler": 1}
+    assert counts == {"matching": 15, "sampler": 1}
 
 
 def test_cache_key_configuration_coverage_and_seed_identity():

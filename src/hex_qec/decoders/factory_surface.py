@@ -1,13 +1,15 @@
 """Spatial Hamming MWPM boundary for the rotated-surface factory.
 
-This is ordinary recovery, not a logical gap or a projected circuit prior.
-Keep surface graph/backend assumptions out of the causal factory stage loop.
+Recovery and the independent H3 sector score share spatial transforms, not
+mutable matching state. No projected circuit prior is used.
 """
 
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pymatching
+
+from .surface_gap import SurfaceMWPMHomologyGap
 
 if TYPE_CHECKING:
     from hex_qec.modularisation.factory import CodeSpec
@@ -28,6 +30,18 @@ class SurfaceFactoryReadout:
         self._lz[list(code.logical_z)] = 1
         self._online = pymatching.Matching.from_check_matrix(self._hz)
         self._terminal = pymatching.Matching.from_check_matrix(self._hz)
+        # A finite Hamming score is used for every physical p, including p=0.
+        # It is not a noise-derived LLR or an infinite deterministic prior.
+        self._gap = SurfaceMWPMHomologyGap(
+            self._hz, self._lz, np.ones(self.num_data_qubits), score_units="hamming_weight",
+        )
+
+    @property
+    def gap_units(self) -> str:
+        return self._gap.score_units
+
+    def score_gap(self, syndrome: np.ndarray) -> np.ndarray:
+        return self._gap.decode_batch(syndrome).gap
 
     def syndrome(self, measurements: np.ndarray) -> np.ndarray:
         return (measurements @ self._hz.T % 2).astype(bool)

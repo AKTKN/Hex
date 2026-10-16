@@ -1,5 +1,9 @@
 # H2: static batched logical-zero factory
 
+This page records the H2 checkpoint. [H3](logical_zero_factory_h3.md) now
+populates `gaps` with per-stage float64 Hamming scores and adds `gap_units`;
+the other execution/frame/label semantics described here remain unchanged.
+
 H2 adds fixed multi-stage execution, causal batch decoding, and terminal
 logical-error labels to the [H1 primitive](logical_zero_factory_h1.md).
 Only two complete physical supports are allocated for any positive `T_tel`.

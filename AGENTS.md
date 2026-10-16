@@ -732,3 +732,37 @@ are historical; this checkpoint supersedes their statements that H2 is absent.
   saved-record scalar/batch equality and setup-only constructor gates. H2
   reserves `gaps=None` but computes no score, projected prior or threshold.
   No general fault-tolerance, paper or speed claim follows from these tests.
+
+## Auxiliary-system H3 checkpoint
+
+H3 was explicitly requested on 2026-10-16 after H2. Earlier statements that
+H3 is absent describe historical checkpoints. **Stop after H3 commit/push;
+H4 has not started.** Read [the H3 guide](docs/logical_zero_factory_h3.md).
+
+- `hex_qec.decoders` now exports `SurfaceMWPMHomologyGap` and
+  `HomologyGapBatch`. The score uses two constrained detector vertices B0/B1,
+  never a logical row appended to create degree-three columns and never free
+  PyMatching boundary vertices. Preserve the potential/parity identity and
+  exhaustive d=3 both-sector minimum-cost tests.
+- Domain checks cover one logical row, degree-1/2 binary error columns,
+  consistent internal potential and connected planar lift. Reject unsupported
+  zero-detector events, hyperedges, cycles, topology and degenerate weights.
+  NetworkX is a direct dependency for setup validation (already required by
+  installed PyMatching). Do not silently discard invalid mechanisms.
+- The metric is min-sum, not posterior log-odds. Public units distinguish
+  Hamming, supplied log weights and generic weights. Costs are recomputed in
+  original float64 weights; native noninteger rounding and dynamic-range
+  limits are documented. Unit factory weights avoid near-tie quantization.
+- H3 fills `FactoryBatchResult.gaps` `(shots,T) float64` and adds `gap_units`.
+  Each stage scores its own corrected syndrome before recovery, with no
+  oracle/future records and no effect on H2's correction/frame tie decisions.
+  Constructor defaults retain direct H2 dataclass compatibility.
+- Cache the sector graph/potential/matrices/weights once per worker and call
+  native matching twice per batch. No per-shot construction or reweighting.
+  `FactoryCacheKey.gap_policy` versions the fixed unit Hamming baseline.
+  At p=0 it still uses finite unit weights, giving zero-syndrome gap d.
+- Preserve all 37 H3 tests and prior H1/H2 invariants, including both-sector
+  enumeration, nonzero potentials, exact ties, invalid graph/weight/native
+  guards, scalar/batch equality, setup counts and causal-score isolation.
+  Projected priors, `create_codecapacity_dem`, cuts/retries and benchmark
+  output remain later work; no paper, posterior or fault-tolerance claim.

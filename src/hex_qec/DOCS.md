@@ -1,7 +1,7 @@
 # Hex package and auxiliary factory
 
 Audited source: `5de58f2f80791054411ad3c0885a4fe3671ed56a` (`hex-adaptive`).
-H0 added documentation on `auxiliary-system`; H1/H2 add an independent factory
+H0 added documentation on `auxiliary-system`; H1/H2/H3 add an independent factory
 primitive and batched execution without changing legacy circuit/decoder paths. The package-root
 `__init__.py` is empty; import APIs from the child packages.
 
@@ -11,7 +11,7 @@ primitive and batched execution without changing legacy circuit/decoder paths. T
 | --- | --- |
 | [circuit_generation](circuit_generation/DOCS.md) | CSS matrices, block supports, noisy SE circuits, ideal encoders |
 | [modularisation](modularisation/DOCS.md) | Module classes, gadget builders, sparse correction propagation, result dataclasses |
-| [decoders](decoders/DOCS.md) | Decoder protocols/adapters, BP-LSD confidence, surface factory Hamming readout |
+| [decoders](decoders/DOCS.md) | Decoder protocols/adapters, BP-LSD confidence, surface readout and two-boundary logical gap |
 | [protocols](protocols/DOCS.md) | Fixed/adaptive Knill, Steane, fixed two-support factory builder |
 | [simulation](simulation/DOCS.md) | Stateful/adaptive execution, compiled factory batches, policies, profiling |
 
@@ -34,7 +34,7 @@ depolarization. No separate idle/gate-duration model is supplied. See
 [tests/DOCS.md](../../tests/DOCS.md) for current versions, checks, and source
 limitations; older detailed descriptions are linked from each child guide.
 
-## H2 factory and remaining proposals
+## H3 factory and remaining proposals
 
 `FactoryCircuitBuilder(RotatedSurfaceCodeAdapter(d), PreparationPlan(r_0,
 r_plus), physical_error=p, T_tel=T).build()` returns `FactoryCircuitBundle`.
@@ -49,15 +49,20 @@ owns a cached sampler/decoder, exposes `sample`, `sample_measurements`,
 `decode`, and oracle-free `decode_operational`, and returns shot-first boolean
 stage records and terminal labels. See the [H2 API guide](../../docs/logical_zero_factory_h2.md)
 for equations, shapes, reset convention, cache keys, lifetime, and tests.
+H3 adds `(shots,T) float64` `gaps` and `gap_units="hamming_weight"` to full
+results, scored causally from each corrected syndrome without changing
+H2's frame/label behavior. `hex_qec.decoders.SurfaceMWPMHomologyGap` provides
+standalone two-sector costs, corrections, best class and explicit score units;
+see the [H3 guide](../../docs/logical_zero_factory_h3.md).
 
 The [proposed/untested specification](../../docs/README.md) separates a
 two-block one-bit logical-zero factory from full Knill EC. `CodeSpec`,
 `PreparationPlan`, `TeleportationStage`, `FactoryCircuitBundle`, ledger and
 prep-frame contracts are implemented in H1. `CompiledFactory`,
 `FactoryBatchDecoder`, `FactoryOperationalBatch`, `FactoryBatchResult`, and
-`FactoryCacheKey` are implemented in H2. `SurfaceMWPMHomologyGap` and
-projected-prior APIs remain future targets; `gaps=None` reserves the result
-slot without a score algorithm. Circuit
+`FactoryCacheKey` are implemented in H2. H3 validates the spatial two-boundary
+gap against exhaustive d=3 enumeration. Projected-prior APIs remain future
+targets. Circuit
 building, signed-frame processing, decoding, and analysis must remain distinct;
 surface-specific graph assumptions belong in a surface adapter. Hex must not
 gain YAML, Parquet, or filesystem experiment runners for this extension.

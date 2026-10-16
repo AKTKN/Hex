@@ -8,6 +8,10 @@ H2 additionally exports `CompiledFactory`, `FactoryBatchDecoder`,
 separate static multi-stage factory. See [DOCS.md](DOCS.md#h2-compiled-factory-batches)
 and [the H2 guide](../../../docs/logical_zero_factory_h2.md) for sampling once,
 causal batched frame updates, terminal labels, and worker-local cache lifetime.
+H3 fills `FactoryBatchResult.gaps` with causal `(shots,T) float64` Hamming
+sector scores and adds `gap_units`, while preserving the other H2 fields;
+see [DOCS.md](DOCS.md#h3-causal-stage-scores). The score graph is cached
+separately from recovery and terminal evaluation, without threshold branching.
 
 ## Opt-in wall-time instrumentation
 

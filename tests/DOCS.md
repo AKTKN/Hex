@@ -12,6 +12,7 @@ contains Python modules but has no `__init__.py`. Historical executions are in
 | --- | --- |
 | `test_factory_circuit.py` | H1 signed circuit/ledger, preparation frames, oracle isolation, single faults, exact legacy map comparisons |
 | `test_factory_batch.py` | H2 reused-support refreshes, causal batches, terminal labels, replay in both Pauli bases, cache lifetimes |
+| `test_surface_gap.py` | H3 exhaustive sector minima, graph/weight guards, native batching, causal factory gaps |
 | `test_phase1_decoder_adapters.py` | Batch/scalar dtype compatibility, decoder factories, rich results, module normalization |
 | `test_phase2_results.py` | Aggregate wrappers, legacy tuple compatibility, detail-level validation |
 | `test_phase3_stateful_backend.py` | Measurement axes/reconstruction, fixed endpoints, small statistical comparisons |
@@ -59,7 +60,7 @@ boundaries, two supports, an ideal oracle isolated from all decoders/detectors,
 eight physical fault cases and a terminal logical fault, deterministic
 legacy map equality, and batch decoder reuse/partition equivalence.
 H2 now supplies production multi-stage sampling and logical-error results.
-Gap enumeration and projected-prior tests remain later phases.
+H3 now adds gap enumeration; projected-prior tests remain later phases.
 
 Later [factory phases](../docs/README.md) must preserve H1's gates and add
 two-support role swaps, multi-stage causal checks, scalar/batch execution
@@ -97,3 +98,35 @@ documents the convention and the test log retains the initial failures.
 
 No H3 algorithm, benchmark sweep, full pytest suite, general fault-tolerance
 proof, or performance measurement was added/run by H2.
+
+## H3 sector exactness and causal gaps
+
+`PYTHONPATH=src python -m pytest -q tests/test_surface_gap.py` passes **37
+tests** in **6.04 s**, with eight existing dependency warnings. The final
+targeted H3/H2/H1/legacy run passes **148 tests**, two inherited statistical
+tests deselected, in **25.89 s**. Commands and the initial two native-weight
+guard failures are recorded in [TEST.md](../TEST.md#auxiliary-system-h3-surface-logical-gap).
+
+The exactness oracle enumerates all `2^9` d=3 X-error patterns and computes
+both class minima independently. It queries all 16 unique syndromes using
+four weight vectors, including three nonuniform vectors, and two L-row
+representatives inducing zero/nonzero potentials. It verifies W0/W1, gap,
+minimum class, both correction constraints, degree-two lifted columns, and
+the potential identity. A separate exactly representable tie selects class
+zero and gap zero; floating near-ties allow either minimizing class within
+the stated float64 comparison tolerance. No production enumeration is used.
+
+Other tests cover hand-graph parity signs, parallel-edge merging/width,
+posterior-sum distinction, invalid cycles/degree/zero-detector/disconnected/
+nonplanar graphs, invalid observables/batches/units/weights, native precision
+range, recomputed original-weight costs, bad native residuals/weights, cache
+identity, two calls per native batch, no reconstruction and scalar equality.
+
+Factory tests compare each stored stage score to enumeration, perturb future
+and oracle records, and change raw logical branches without changing syndrome.
+Zero-noise d=3 T=1/2/3 and d=5 T=2 have finite Hamming gap d. New physical
+fixtures use <=32 shots. Existing H2 tests now assert filled gap dtypes/shapes
+and 15 setup matching objects, preserving all prior frame/label comparisons.
+Saved-record probes against the H2 decoder also preserve every operational
+field and terminal label. No H4 algorithm, full suite, sweep, performance
+benchmark or general fault-tolerance claim is included.

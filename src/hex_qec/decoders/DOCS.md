@@ -56,28 +56,58 @@ returns logical-Z mismatch. These are deterministic batch transforms with
 cached handles and no physical sampling. The stage loop and production
 result API live in [simulation](../simulation/DOCS.md); the
 [H2 guide](../../../docs/logical_zero_factory_h2.md) specifies the full frame
-equations, noise and label convention. This is ordinary spatial recovery;
-no homology-sector gap or circuit-informed prior is implemented here.
+equations, noise and label convention. H3 adds a separate cached sector graph
+and `score_gap(syndrome)` returning `(shots,) float64` in `gap_units`, fixed
+to `hamming_weight`. The original recovery handles remain unchanged.
 
-## Proposed only: gap and priors
+## H3 surface homology gap
 
-The [proposed/untested specification](../../../docs/README.md) defines
+`surface_gap.py` exports `SurfaceMWPMHomologyGap` and `HomologyGapBatch`.
+The [scientific specification](../../../docs/README.md) defines
 `W_b(s)=min_{He=s, Le=b} sum_f w_f e_f` and `gap=abs(W_1-W_0)`.
 This min-sum sector difference is not posterior log-odds, which sum over
 patterns. Hamming and log-weight thresholds use different units.
 
-The separate `decoder-confidence` checkout's `FUTURE.md` records unresolved
-gap correctness concerns. Its unsplit constrained path appends an observable
-row, and its MWPM builder calls `Matching.from_check_matrix`. An appended row
-can turn degree-two columns into degree-three hyperedges. Neither correctness
-nor graphlikeness is assumed here; no code was imported or copied from it.
+The required `decoder-confidence` `_forced_gap.py`, `_constraints.py`,
+`_decoder_adapter.py` and `FUTURE.md` were reviewed. They remain unverified
+references: their unsplit path appends L, may produce degree-three columns,
+and rebuilds matching on per-shot constrained calls. No code is copied or
+dependency imported from that checkout. H3 uses the validated lift instead.
 
-Future `SurfaceMWPMHomologyGap` requires a validated two-boundary lift,
-positive finite weights, explicit zero-noise handling, and d=3 exhaustive
-sector checks. Future projected priors must retain complete detector/logical
+For `H.shape=(m,n)` and one L row, the constructor solves internal potentials
+`L[e]=u[a] XOR u[b]`; one-endpoint edges attach to B1 when `L[e] XOR u[a]=1`,
+otherwise B0. `H_ext=[H;B0;B1]` has exactly two ones in every column. Set
+`t1=b XOR u.dot(s)` and `t0=parity(s) XOR t1`; one cached Matching decodes both
+sectors in two native batch calls. B0/B1 are constrained detector vertices,
+never free native boundary nodes. The identity `L=u^T H XOR B1` establishes
+the sector correspondence. Setup validates binary/shape/degree, potential,
+connected lift and planar topology; zero-detector events/hyperedges fail.
+
+`decode_batch(syndromes)` requires nonempty binary `(shots,m)`, returning
+`sector_costs (shots,2) float64`, `corrections (shots,2,n) bool`, `gap (shots,)
+float64`, `best_class (shots,) uint8` (zero wins exact ties), and `score_units`.
+`W0/W1` are cost-column properties. Units are `weight`, `log_weight`, or unit
+`hamming_weight`; no prior is estimated. Weights must be positive finite,
+<=`2**24-1`, and min/max>=`1/(2**24-1)`. Native rounding of noninteger weights
+and absolute normalization overflow are checked explicitly. Rounding
+can obscure near ties; original-weight costs are recomputed and validated
+with a rounding allowance. Integral factory weights avoid that ambiguity.
+The factory explicitly retains finite Hamming scoring at p=0 (zero syndrome
+gap d); infinite/zero weights are rejected. This is not posterior certainty.
+
+Matrix/potential inspection returns copies; topology/L/weight/units/lift/native
+version determine `cache_identity`. Native handles stay synchronous per
+worker, with no rebuilding/reweighting inside batch calls. NetworkX, already
+a PyMatching dependency, is now declared directly for setup-time planarity.
+See [the H3 guide](../../../docs/logical_zero_factory_h3.md) for the proof,
+API example, scientific/numerical limits, causal integration and tests.
+
+## Proposed only: projected priors
+
+Future projected priors must retain complete detector/logical
 signatures (including detector-free logical events), combine identical
 independent events with `q1+q2-2*q1*q2`, and reject unsupported hyperedges.
 Nonlinear offline repair prevents calling a raw circuit projection an exact
 conditional posterior. Graphs, mappings, and decoders must be cached per
 complete configuration, with no oracle or later-stage data in inference.
-None of these new APIs or validations exists in H0.
+H4 priors and their validations have not started.

@@ -68,7 +68,7 @@ performed. Raw detectors retain their original physical sign semantics.
 Results contain `(shots,T,m_z)` corrected pre-recovery syndromes, `(shots,T)`
 raw/corrected byproducts and frame consistency, `(shots,T,n)` X/Z output frames,
 tuple stage IDs and `(shots,) uint64` shot IDs. Full results add
-`(shots,) bool` logical-error labels and `gaps=None`. Frame consistency is not
+`(shots,) bool` logical-error labels. Frame consistency is not
 truth/confidence. Inputs are binary, nonempty, exact-width, and unmodified.
 
 The key covers code/d/p/noise/depth/T/circuit hash/frame/prior/label policy,
@@ -84,5 +84,31 @@ scalar/batch equivalence concerns decoding identical saved records.
 See [the H2 guide](../../../docs/logical_zero_factory_h2.md) for exact frame
 equations, reset-gauge reference tests, fields and lifecycle. Tests cover
 future/oracle isolation, fault propagation, all dtypes, scalar/batch equality,
-and constructor counts. H3 gap, projected priors and threshold/cost analysis
-remain future work. No benchmark filesystem/YAML/Parquet behavior is included.
+and constructor counts. Projected priors and threshold/cost analysis remain
+future work. No benchmark filesystem/YAML/Parquet behavior is included.
+
+## H3 causal stage scores
+
+Full `FactoryBatchResult` now fills `gaps` with `(shots,T) float64` and adds
+`gap_units="hamming_weight"`. H2's `gaps=None` constructor default is retained
+for compatibility; production decode always fills it. `FactoryOperationalBatch`
+keeps its existing fields. The private causal loop returns operational fields
+and scores before terminal evaluation; the oracle-free public method returns
+the original operational object. Each stage scores its current corrected
+syndrome before recovery. Changing future/oracle bits cannot change an earlier
+score; raw logical branches with the same syndrome have the same score.
+
+The surface readout adapter caches a separate `SurfaceMWPMHomologyGap` graph,
+calling native matching twice per stage batch. No constructor or weight update
+occurs per shot. H2 recovery/byproduct/frame tie choices and terminal labels
+are unchanged; the standalone score's best class does not replace them.
+`FactoryCacheKey.gap_policy="surface_two_boundary_hamming_v1"` versions this
+unit-weight policy, including at p=0 (finite zero-syndrome gap d). Existing
+case/native-version/worker lifecycle rules continue to apply. A new T=3 case
+builds 15 matching objects (12 prep, online, terminal, gap), one sampler.
+
+The metric compares sector minima in a spatial independent-edge model, not
+posterior sums or an exact circuit-conditioned probability after nonlinear
+prep repair. No threshold decision changes physical sampling. See
+[the H3 guide](../../../docs/logical_zero_factory_h3.md) for the lift,
+standalone result, native precision and tested limits. H4 has not started.
