@@ -63,3 +63,13 @@ reset/readout/CNOT noise, and strict signed flows. The factory's actual
 consumed-block readout stays noisy; only its evaluation suffix is ideal.
 See [the H1 guide](../../../docs/logical_zero_factory_h1.md). Multi-stage
 support recycling and compiled sampling remain later work.
+
+## HEX-N1 configurable noise objects
+
+`factory_noise.py` exports frozen `CircuitNoiseModel`, `FactoryNoiseModel`,
+`IdleWindow`, `PlusPreparationIdle` and `idle_depolarizing_probability`.
+Multipliers/durations are finite nonnegative reals; resolved channels are in
+[0,1], with explicit fractional-power domain checks and no clipping. This
+stage adds no channel to existing circuits. See the
+[noise guide](../../../docs/factory_noise_model.md) for equations, opt-in
+semantics, timing boundaries and planned factory-only integration.

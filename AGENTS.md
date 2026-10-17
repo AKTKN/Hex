@@ -853,3 +853,22 @@ authorized by this phase. Read [the H5 guide](docs/logical_zero_factory_h5.md).
   exact marginal/conditional likelihood, posterior confidence, LER improvement,
   speedup, threshold, paper reproduction or general FT claim is established.
   No bench files, YAML/Parquet integration or experiment outputs are added.
+
+## HEX-N1 / HEX-N2 factory custom noise authorization
+
+The user explicitly authorized these two stages after H5, on auxiliary-system
+only. This supersedes earlier phase stop statements for this work. Do not edit
+knill_bench, full Knill/Fig.4(d), other protocols or the hex-parallel worktree.
+Commit/push HEX-N1 (noise abstraction/tests), then HEX-N2 (factory integration/
+tests), preserving exact omitted-option hex_uniform behavior. Use the existing
+Conda knill_system Python; no dependency changes or production sweeps.
+
+Read [the noise guide](docs/factory_noise_model.md). Custom parameters are
+frozen validated objects, with probability products checked without clipping.
+Only the two explicit idle windows are permitted. Prep circuits and their
+offline DEMs/maps must be compiled consistently; never patch a compiled prep
+module's noise. Keep signed flows, causal frame repair, batch caches, Hamming
+and strict projected modes and the sole evaluation-only oracle intact. Native
+Hex H5 uses full-prefix projection; downstream local DEM consumers can use the
+coupling region (including post-CNOT idle) and must label excluded prep/storage
+residuals. No claim of an exact conditional posterior is permitted.

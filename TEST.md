@@ -1504,3 +1504,49 @@ and untracked AGENTS/STATUS remain untouched. No experiment outputs are staged.
 The independently invoked factory construction-counter test also passes:
 `PYTHONPATH=src python -m pytest -q tests/test_codecapacity_public.py::test_factory_true_reuses_graphs_sampler_and_maps`
 (**1 passed, 8 warnings, 4.73 s**).
+
+
+## HEX-N1 configurable factory noise abstraction (2026-10-17)
+
+Starting Hex checkout: clean auxiliary-system at 4278d29, tracking
+origin/auxiliary-system; fetch confirmed 0/0 divergence. Only this Hex worktree
+is changed; knill_bench and hex-parallel are untouched. Runtime is the existing
+Conda knill_system (Python 3.12.15, Stim 1.16.0, PyMatching 2.4.0).
+
+Added frozen CircuitNoiseModel/FactoryNoiseModel, IdleWindow and
+PlusPreparationIdle, canonical parameter identity, validated operation products
+and stable depolarizing idle utility. No circuit builder or decoder behavior
+changes in N1. Channels reject invalid probabilities and fractional negative
+bases without clipping; zero duration, integer over-mixing durations and tiny
+exposures have explicit deterministic tests. The noise guide documents the
+factory-only N2 boundary and distinguishes native H5 full-prefix projection
+from downstream module-local priors.
+
+Focused command:
+`conda run --no-capture-output -n knill_system python -m pytest -q tests/test_factory_noise_model.py`
+passed 54 tests in 0.88 s. Broad command:
+`conda run --no-capture-output -n knill_system python -m pytest -q tests -k 'not ler_is_statistically_compatible'`
+returned 314 passed, 1 failed, 2 deselected, 496 warnings in 85.75 s.
+The failure is the existing
+`test_real_cluster_llr_threshold_produces_mixed_short_long_batch`: all eight
+seeded shots take long in this runtime. Reproduced unchanged failure in an
+isolated git archive of 4278d29 (1 failed, 4 warnings, 2.11 s), executing the
+same test with this Conda Python and archive src on PYTHONPATH. No old adaptive
+source/test or dependency was altered to change that result. The two larger
+inherited statistical tests were not run. Detailed evidence is in TEST.md.
+
+Baseline-isolation command used a TemporaryDirectory, extracted
+`git archive 4278d29 src tests` with Python tarfile, and ran
+`[sys.executable, '-m', 'pytest', '-q',
+ 'tests/test_phase5_confidence_adaptive.py::test_real_cluster_llr_threshold_produces_mixed_short_long_batch']`
+with cwd in that archive and PYTHONPATH=archive/src. UNMODIFIED_H5_EXIT=1.
+No archive/output was saved in Git. Pre-edit d3/p=.001/r=(2,2)/T=1,2,
+seed=971/seven-shot circuit/raw/result hashes were also captured for N2's
+legacy golden checks. `conda run --no-capture-output -n knill_system python
+-m compileall -q src` and `git diff --check` passed.
+
+Factory-focused regression gate:
+`conda run --no-capture-output -n knill_system python -m pytest -q tests/test_factory_noise_model.py tests/test_factory_circuit.py tests/test_factory_batch.py tests/test_surface_gap.py tests/test_codecapacity_dem.py tests/test_codecapacity_public.py`
+passed **218 tests**, 348 existing SciPy warnings, **69.78 s**. This includes
+all H1-H5 factory/gap/prior/public-option regressions and N1. N1 is complete;
+next authorized stage is N2. No production simulation ran.

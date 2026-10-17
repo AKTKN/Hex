@@ -96,3 +96,10 @@ three-round X sectors, zero-noise behavior, numeric/cache conventions and
 scientific limits. The whole fast repository selection passed 261 tests;
 [TEST.md](../../TEST.md#auxiliary-system-h5-public-options-and-whole-implementation-audit)
 records the exact command and two intentionally excluded statistical cases.
+
+## Factory configurable physical noise
+
+HEX-N1 adds reusable frozen noise/window parameters and a stable idle channel
+utility, exported from `circuit_generation`. No legacy circuit uses them
+implicitly. See [factory noise](../../docs/factory_noise_model.md) for the
+explicit factory-only scope and HEX-N2 integration contract.

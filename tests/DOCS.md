@@ -188,4 +188,11 @@ plus T=2/Z with manual actual-policy prefix replay;
 two/three-SE X-sector logical-only terms raise explicitly. Factory True
 covers d=3 (2,2), T=1/2. Tests retain H4's context/nonlinearity counterexamples;
 passing model checks do not certify the physical prior or a LER improvement.
+
+## HEX-N1 noise abstraction
+
+`test_factory_noise_model.py` checks frozen canonical parameters, operation
+probability products, exact idle formula/composition, fractional domains,
+zero duration, tiny-probability accuracy, overflow and invalid types. It
+performs no physical sampling. Existing fast regressions remain required.
 See [the H5 guide](../docs/logical_zero_factory_h5.md) for the whole assessment.
