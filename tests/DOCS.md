@@ -196,3 +196,18 @@ probability products, exact idle formula/composition, fractional domains,
 zero duration, tiny-probability accuracy, overflow and invalid types. It
 performs no physical sampling. Existing fast regressions remain required.
 See [the H5 guide](../docs/logical_zero_factory_h5.md) for the whole assessment.
+
+
+## HEX-N2 factory integration
+
+`test_factory_custom_noise.py` uses d=3 physical batches <=7 shots. It checks
+H5 golden default circuits/raw records/XZ frames/gaps, operation strengths and
+native interaction boundaries, precisely alternating idle supports, initial
+parallel timing, preparation priors/maps from the actual custom circuit,
+independent global-frame replay in both Pauli bases, strict signed flows/DEM,
+paired logical-X survivor faults, unchanged oracle isolation, Hamming/True
+physical equality, mechanism ownership, complete cache identities and native
+reuse. Zero-active-noise True and over-mixing prior requests raise explicitly.
+The broad gate's one old adaptive BP-LSD seed assertion also fails on untouched
+H5 in this Conda environment; it is documented without changing old tests.
+See TEST.md for exact focused and regression commands/results.

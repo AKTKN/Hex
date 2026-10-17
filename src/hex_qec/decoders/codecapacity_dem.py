@@ -233,7 +233,7 @@ def _independent_depolarizing_probability(p: float, qubits: int) -> float:
 def _enumerate_faults(bundle: FactoryCircuitBundle, stage_index: int) -> tuple[FaultMechanism, ...]:
     stage = bundle.stages[stage_index]
     regions = [(s.index, r) for s in bundle.stages[:stage_index + 1]
-               for r in (*s.preparations, s.coupling, s.measurement)]
+               for r in (*s.preparations, s.storage_idle, s.coupling, s.measurement) if r is not None]
     return _enumerate_prefix_faults(bundle.circuit[:stage.measurement.instructions.stop],
                                    tuple((s, r.name, r.instructions.start, r.instructions.stop) for s, r in regions))
 

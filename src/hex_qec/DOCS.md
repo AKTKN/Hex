@@ -103,3 +103,12 @@ HEX-N1 adds reusable frozen noise/window parameters and a stable idle channel
 utility, exported from `circuit_generation`. No legacy circuit uses them
 implicitly. See [factory noise](../../docs/factory_noise_model.md) for the
 explicit factory-only scope and HEX-N2 integration contract.
+
+
+HEX-N2 integrates `FactoryCircuitBuilder(..., noise_model=FactoryNoiseModel(...))`
+with rebuilt native preparation DEMs/maps and explicit post-CNOT control and
+refresh-storage idle regions. None preserves exact hex_uniform circuits and
+seeded decoding. Noise parameters enter physical/compiled/prior identities.
+Full Knill/Fig.4(d) and other protocols have no custom-noise extension. See
+[the noise guide](../../docs/factory_noise_model.md) for public construction,
+mathematics, placement, timing and inference limits.

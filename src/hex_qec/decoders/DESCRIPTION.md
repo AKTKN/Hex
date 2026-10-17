@@ -250,3 +250,10 @@ worker-local; no final oracle or hidden fault truth enters inference.
 [The H5 guide](../../../docs/logical_zero_factory_h5.md) documents stable
 imports, exact interfaces/shapes/equations, hashes, reuse, tested scope and
 scientific/numerical limits. Earlier phase descriptions are historical.
+
+
+## HEX-N2 factory-only physical noise
+
+The current custom-noise API, timing and map conventions are described in
+[DOCS.md](DOCS.md) and [the noise guide](../../../docs/factory_noise_model.md).
+Legacy defaults and other protocol physics are preserved.

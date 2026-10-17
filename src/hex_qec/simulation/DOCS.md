@@ -155,3 +155,18 @@ selection passes 261 tests, two larger statistical cases excluded. See
 [the H5 guide](../../../docs/logical_zero_factory_h5.md) for precise context,
 numerical/probabilistic limits and full-Knill coverage. No physical prior
 accuracy certificate, speedup, threshold or posterior-confidence claim follows.
+
+
+## HEX-N2 custom-noise compilation
+
+CompiledFactory consumes the configured bundle using its existing API;
+no new per-shot path or sampling branch is added. FactoryCacheKey appends
+noise_model_sha256 (empty for legacy). Different custom models remain
+separate even at p=0, where their literal circuits can coincide. Preparation
+maps/decoders derive from the actual custom circuit before compilation.
+False retains Hamming inference; True retains native H5 full-prefix
+projection with both physical windows in its ledger. Terminal oracle data
+remain evaluation-only. No module-local policy is silently substituted;
+[the noise guide](../../../docs/factory_noise_model.md) describes downstream
+local slicing and excluded preparation/storage residuals. Native handles
+remain cached synchronously per complete configuration/worker.

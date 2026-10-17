@@ -22,3 +22,13 @@ revision, environment, checks, and limitations, and
 [the package map](../src/hex_qec/DOCS.md) for current APIs. The original
 [THEORY.md](../THEORY.md), [PLAN.md](../PLAN.md), and package `DESCRIPTION.md`
 files remain historical context for the earlier adaptive-SE development.
+
+
+## Factory configurable physical noise (HEX-N1 / HEX-N2)
+
+The post-H5 [noise-model guide](factory_noise_model.md) documents frozen
+operation multipliers, the two explicit idle windows, factory-only opt-in
+construction, consistent preparation DEM/maps, cache identities and local/full
+prior distinction. The default hex_uniform and all other protocol physics
+remain unchanged. Exact test evidence and known baseline failures are in
+[TEST.md](../TEST.md) and [STATUS.md](../STATUS.md).

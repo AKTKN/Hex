@@ -200,3 +200,14 @@ it against False on shared physical records before scientific comparisons.
 Do not apply Hamming thresholds to log-weight gaps. No large Monte Carlo or
 paper reproduction was run. Bench integration, parameter sweeps, posterior
 models and supported generalizations are separate future tasks.
+
+
+## Post-H5 custom factory physical noise
+
+HEX-N1/N2 add optional FactoryNoiseModel to the factory builder only; all
+examples above still use exact legacy hex_uniform. Native H5 True retains
+its full-prefix approximation and strict rejection rules, now including both
+explicit idle windows. Downstream local priors have a different declared
+scope. See [factory noise](factory_noise_model.md) for operation channels,
+preparation decoding consistency, timing, metadata and causal tests. No full
+Knill/Fig.4(d) custom-noise extension is implemented.

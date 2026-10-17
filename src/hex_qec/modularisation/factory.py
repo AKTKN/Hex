@@ -4,7 +4,7 @@ There is deliberately no sampler, online stage decoder, or experiment runner
 here. All array transforms use a shot-first batch and GF(2) arithmetic.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import copy
 from numbers import Integral
 from typing import Protocol
@@ -195,6 +195,11 @@ class TeleportationStage:
     output_checks: tuple[SignedCheckFlow, ...]
     terminal_checks: tuple[SignedCheckFlow, ...]
     raw_logical_outcome: RecordParity
+    # Optional subregions preserve old positional construction and repr-based
+    # H5 identities when omitted. Post-CNOT idle is nested inside coupling;
+    # storage_idle is a separate, pre-coupling interval after plus preparation.
+    post_cnot_control_idle: CircuitRegion | None = field(default=None, repr=False)
+    storage_idle: CircuitRegion | None = field(default=None, repr=False)
 
 
 class FactoryCodeAdapter(Protocol):
@@ -206,7 +211,7 @@ class FactoryCodeAdapter(Protocol):
     def blocks(self) -> tuple[BlockSupport, BlockSupport]: ...
 
     def prepare(self, block: BlockSupport, basis: str, rounds: int,
-                physical_error: float) -> css_detector_module: ...
+                physical_error: float, *, noise_model=None) -> css_detector_module: ...
 
 
 @dataclass(frozen=True)
@@ -248,9 +253,10 @@ def _dem_end_frames(module: css_detector_module, basis: str) -> tuple[np.ndarray
         if not (gate.is_noisy_gate and not gate.produces_measurements):
             simulator.do(instruction)
         for lane, pauli in locations.get(offset, ()):
-            if "*" in pauli:
+            if "*" in pauli and not module.allow_pauli_products:
                 raise ValueError("Hex CSS representative must be a single Pauli")
-            simulator.set_pauli_flip(pauli[0], qubit_index=int(pauli[1:]), instance_index=lane)
+            for factor in pauli.split("*"):
+                simulator.set_pauli_flip(factor[0], qubit_index=int(factor[1:]), instance_index=lane)
     x, z, _, _, _ = simulator.to_numpy(transpose=True, output_xs=True, output_zs=True)
     x, z = x[:, support].astype(np.uint8), z[:, support].astype(np.uint8)
     if module.matchable:

@@ -1251,3 +1251,94 @@ Factory-focused regression gate:
 passed **218 tests**, 348 existing SciPy warnings, **69.78 s**. This includes
 all H1-H5 factory/gap/prior/public-option regressions and N1. N1 is complete;
 next authorized stage is N2. No production simulation ran.
+
+
+## HEX-N2 factory physical noise integration (2026-10-17)
+
+HEX-N1 was committed/pushed as f73d69d to origin/auxiliary-system. N2 adds only
+Hex source/tests/docs on the same branch. The bench checkout remains clean;
+its pin/configs/sources are not updated. The hex-parallel worktree, default
+branches, dependency versions and scientific specification are untouched.
+
+Implemented optional FactoryCircuitBuilder/RotatedSurfaceCodeAdapter
+noise_model, operation-specific channels, post-complete-CNOT control-data idle
+inside coupling, and inter-stage memory-data storage idle after plus refresh.
+Initial preparations remain parallel with no stage-0 storage wait. Custom
+preparation circuits are finalized before native DEMs/priors/matching/maps
+are compiled. The original surface hook order, signed checks, canonical
+Pauli frames, noisy target readout and sole ideal terminal oracle are retained.
+Custom noise/config/physical hashes and explicit scheduling/prior scopes enter
+metadata and compiled/projected identities. None preserves hex_uniform exactly.
+
+The first small integration probe exposed the old CSS single-Pauli assertion
+for joint representatives. Added a backward-compatible opt-in
+allow_pauli_products flag and propagated every factor together in one setup
+fault lane in local-history/global/end-frame maps. Sparse two-qubit-only
+preparations exercise genuine joint representatives and independently compare
+both global readout bases. The probe also revealed that calling
+without_noise() before channel insertion fuses adjacent CX instructions and
+would delay errors across later gates. Corrected generation to replace native
+zero placeholders in the original stream; deterministic tests require the
+exact native interaction boundaries (48 individual preparation D2 sites).
+These fixes precede the passing formal focused run; no failing assertion was
+removed to alter physics or hide a model limitation.
+
+Native Hex H5 True remains full-prefix fixed-reference projection and retains
+both physical idle sources. Downstream module-local DEMs can start at coupling,
+which includes post-CNOT idle but excludes preceding prep/storage residuals;
+metadata/docs explicitly distinguish these scopes. No bench module-local
+implementation or full Knill custom-noise support is changed here. Hamming
+and log-weight gaps retain their meanings and strict unsupported-model errors.
+A paired physical logical X on the surviving control after the complete CNOT
+flips the final label while leaving the entire target operational record,
+syndrome, byproduct, frames and gap identical. This is a causal limitation of
+that score, not an exact posterior or survivor-certification claim.
+
+Commands and results:
+
+- `conda run --no-capture-output -n knill_system python -m pytest -q tests/test_factory_custom_noise.py`
+  — 32 passed, 140 inherited SciPy warnings, 16.78 s.
+- `conda run --no-capture-output -n knill_system python -m pytest -q tests -k 'not ler_is_statistically_compatible and not test_real_cluster_llr_threshold_produces_mixed_short_long_batch'`
+  — 346 passed, 3 deselected, 632 warnings, 98.22 s. The exclusions are the
+  two inherited 2048-shot statistical cases and the BP-LSD seed assertion
+  reproduced on untouched H5 during N1. No existing test was edited.
+- `conda run --no-capture-output -n knill_system python -m pytest -q tests/test_factory_custom_noise.py::test_joint_pauli_preparation_representatives_are_one_fault_lane`
+  — 1 passed, 4 warnings, 2.22 s, after requiring actual joint representatives
+  and independent M/MX global-map comparisons.
+- `conda run --no-capture-output -n knill_system python -m compileall -q src`
+  and `git diff --check` pass. All 118 local Markdown link targets in changed
+  guides exist. No unsupported inference graph is dropped/decomposed/fallbacked.
+
+The broad run also covers native H1-H5 factory/gap/prior, fixed/stateful Knill,
+adaptive prep, correction caches and diagnostics. New physical tests use only
+d3 and <=7 shots per batch; no production run, threshold study, timing claim,
+new retry logic or large Monte Carlo is included. Legacy golden checks pin
+pre-edit H5 circuits, raw records, X/Z frames and gaps at T=1/2 in this
+Stim 1.16.0/PyMatching 2.4.0 environment. An extra independently extracted H5
+seven-shot p=.04/T=2 fixture contains one actual failure and pins every
+result array together. Native goldens are version scoped; circuit/default
+option equality and structural/map gates remain unconditional.
+
+N2 changed files (including this log):
+AGENTS.md; STATUS.md; TEST.md; docs/README.md; docs/factory_noise_model.md;
+docs/logical_zero_factory_h5.md; src/hex_qec/DOCS.md;
+src/hex_qec/circuit_generation/{DESCRIPTION.md,DOCS.md,factory_surface.py};
+src/hex_qec/modularisation/{DESCRIPTION.md,DOCS.md,factory.py,modularised_circuit.py};
+src/hex_qec/decoders/{DESCRIPTION.md,DOCS.md,codecapacity_dem.py};
+src/hex_qec/protocols/{DESCRIPTION.md,DOCS.md,logical_zero_factory.py};
+src/hex_qec/simulation/{DESCRIPTION.md,DOCS.md,factory.py};
+tests/{DOCS.md,test_factory_custom_noise.py}.
+
+After N2 commit/push, stop. No additional phase or production simulation is
+authorized. The remaining known unrelated failure is the unchanged adaptive
+BP-LSD mixed-decision seed test documented under N1.
+
+Final focused gate after strengthening the joint-representative assertion and
+adding the independently generated noisy H5 golden:
+`conda run --no-capture-output -n knill_system python -m pytest -q tests/test_factory_noise_model.py tests/test_factory_custom_noise.py`
+— **87 passed**, 144 existing-category SciPy warnings, **17.40 s**. The extra
+noisy fixture was generated by extracting `git archive 4278d29 src` into a
+TemporaryDirectory and running Conda Python with that src on PYTHONPATH:
+d3, p=.04, r=(2,2), T=2, seed=971, seven shots, one error. Its circuit/raw/
+combined-result SHA256 values are committed in the test, with no raw outputs.
+No algorithm changed after the passing 346-test broad gate.

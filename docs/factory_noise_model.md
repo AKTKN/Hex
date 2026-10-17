@@ -72,3 +72,102 @@ and complete detector/logical signatures must remain strict in either case.
 
 The sole ideal terminal evaluation oracle is outside every operational
 model; no oracle information is a decoder input or confidence score.
+
+## Implemented factory API (HEX-N2)
+
+```python
+from hex_qec.circuit_generation import FactoryNoiseModel, IdleWindow, PlusPreparationIdle
+from hex_qec.modularisation import PreparationPlan
+from hex_qec.protocols import FactoryCircuitBuilder, RotatedSurfaceCodeAdapter
+from hex_qec.simulation import CompiledFactory
+
+noise = FactoryNoiseModel(
+    one_qubit=.5, two_qubit=1, idle=1, measurement=2, reset=1,
+    post_cnot_control=IdleWindow(duration=.75, rate_multiplier=1),
+    during_plus_preparation=PlusPreparationIdle(
+        enabled=True, se_round_duration=1, rate_multiplier=1),
+)
+bundle = FactoryCircuitBuilder(
+    RotatedSurfaceCodeAdapter(3), PreparationPlan(2, 2), .001,
+    T_tel=2, noise_model=noise,
+).build()
+factory = CompiledFactory.from_bundle(bundle, seed=31,
+                                      create_codecapacity_dem=False)
+result = factory.sample(3)
+```
+
+The existing base-p domain [0,.5] is preserved. Resolved operation and idle
+channels are validated before preparation begins, including inactive window
+parameters. `noise_model=None` follows the original builder without a new
+channel, altered ordering or additional metadata. Custom all-one multipliers
+are a new model, labelled `factory_operation_specific_v1`.
+
+`RotatedSurfaceCodeAdapter.prepare(..., *, noise_model=None)` creates its
+custom preparation from the native zero-noise surface instruction skeleton.
+It replaces the zero placeholders **before** Stim can fuse gates across them,
+so each two-qubit channel remains immediately after its own gate. It then
+constructs the native CSS detector module, DEM priors, four matching handles,
+representative corrections, local history maps and boundary frames from that
+same physical circuit. The original hook ordering and signed check ledger
+are retained. No previously compiled uniform module is patched.
+
+Ancilla `R; H; ...; H; MR` uses X reset error after R, depolarization after
+both H gates, X readout error immediately before the physical Z measurement
+MR, and X reset error after MR. The post-MR reset error is overwritten by the
+next explicit R and has no data effect; it is not another idle interval.
+Data initialization uses X after R or Z after RX. Native instruction RX is
+treated as an X reset, not an extra noisy H gate. No other gate set or
+arbitrary instruction schedule is supported by this factory adapter.
+
+Custom preparations opt into
+`css_detector_module(..., allow_pauli_products=True)`; the default is False.
+If Stim selects a joint Pauli representative, all factors propagate together
+in one fault lane through both local-history and global-frame maps. This
+changes no event probability or graph decomposition. Legacy single-Pauli
+propagation, the existing matchable preparation edge projection and legacy
+weight formula are preserved; these priors are not claimed exact or optimal.
+
+`TeleportationStage.post_cnot_control_idle` is a subregion at the end of
+`coupling`; `storage_idle` is a separate region between refresh preparation
+and coupling. Each has no measurements and exactly one DEPOLARIZE1 on the
+specified data support. Zero effective channels have no region. Bundle
+validation checks support, causal ordering, alternating roles, signed flows
+and strict operational Stim DEM without gauge/disjoint-error approximations.
+
+Custom metadata includes canonical `noise_model_json`, `noise_model_sha256`,
+`physical_noise_sha256` (including p), resolved window probabilities, scheduling
+and native/full-prefix versus downstream/module-local prior scope. The literal
+Stim-text `circuit_sha256` retains its original meaning. `FactoryCacheKey`
+adds `noise_model_sha256` (empty for legacy), so even different inactive
+parameters at p=0 remain distinguishable. Actual noisy preparation maps/
+weights, circuit, metadata and preceding policies already enter projected
+cache identities. Graphs/maps/converters/sampler compile once per complete
+case/worker; no sampling state is shared across different compiled cases.
+
+False keeps Hamming online matching and Hamming min-sum gap, including finite
+p=0 scores. True keeps Hex H5's existing full-prefix reference projection,
+with both physical idle sources retained and correctly owned by the stage
+ledger. Downstream **module-local** DEMs slice at `stage.coupling`, include
+post-control idle, and exclude preceding preparation/storage residuals under
+their explicitly different approximation. No new local inference mode is
+silently installed in Hex. Both paths must pass their original structural
+checks: unsupported hyperedges/logical terms, over-mixing factorization or
+nonfinite weights raise, with no lossy fallback. True at zero active noise
+explicitly requests the finite Hamming baseline instead.
+
+Control errors after the complete CNOT can change the survivor without
+changing that stage's destructive target record. A logical X in this window
+flips the final evaluation label while leaving its already determined
+operational syndrome/byproduct/gap unchanged. The tests explicitly check this
+causal limit; the gap is not a certificate of survivor correctness. No exact
+posterior, fault-tolerance, threshold, retry or performance claim follows.
+
+Deterministic tests are in `tests/test_factory_noise_model.py` and
+`tests/test_factory_custom_noise.py`; physical batches use d=3 and <=7 shots.
+The latter includes pre-edit H5 golden circuits/records/XZ frames/gaps,
+operation placement, disjoint windows/role swaps, strict signed DEM gates,
+actual preparation priors and independently replayed global frame maps,
+paired survivor logical faults, both prior modes, oracle exclusion, native
+reuse, parameter identities and explicit unsupported-domain errors. Exact
+commands/results and the reproduced pre-existing adaptive test failure belong
+to [TEST.md](../TEST.md) and [STATUS.md](../STATUS.md).

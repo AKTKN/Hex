@@ -154,3 +154,10 @@ DEM decoding and correction propagation.
 - The surface-code-specific path is selected only when a protocol or builder
   is explicitly called with `surface_code=True`; the default remains
   `False` for backward compatibility.
+
+
+## HEX-N2 factory-only physical noise
+
+The current custom-noise API, timing and map conventions are described in
+[DOCS.md](DOCS.md) and [the noise guide](../../../docs/factory_noise_model.md).
+Legacy defaults and other protocol physics are preserved.

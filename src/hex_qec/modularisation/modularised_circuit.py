@@ -110,7 +110,11 @@ class css_detector_module():
                  matchable : bool = True,
                  confidence_aggregator: Callable[[CSSInnerDecodeResults], ndarray | None] | None = None,
                  profiler: Any = None,
+                 *, allow_pauli_products: bool = False,
                  ) -> None:
+        if not isinstance(allow_pauli_products, bool):
+            raise ValueError("allow_pauli_products must be bool")
+        self.allow_pauli_products = allow_pauli_products
         self.circuit = circuit
         self.num_measurements = circuit.num_measurements
         self.num_detectors = circuit.num_detectors
@@ -323,23 +327,17 @@ class css_detector_module():
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
-            assert "*" not in correction[0] # for the moment assume the fault are only weight 1 paulis
+            assert self.allow_pauli_products or "*" not in correction[0]
         flip_sim_all_faults = stim.FlipSimulator(batch_size=num_faults, disable_stabilizer_randomization=True)
         for instruction_location, instruction in enumerate(circuit):
             gate_data = stim.gate_data(instruction.name)
             if not (gate_data.is_noisy_gate and not gate_data.produces_measurements):
                 flip_sim_all_faults.do(instruction)
             for index, correction in corrections_at_location[instruction_location]:
-                # print(f"Instruction location: {instruction_location}")
-                # print(f"Index: {index}")
-                pauli = correction[0]
-                qubit = int(correction[1:])
-                # print(f"Pauli: {pauli}, Qubit: {qubit}")
-                flip_sim_all_faults.set_pauli_flip(
-                    pauli,
-                    qubit_index=qubit,
-                    instance_index=index
-                )
+                for factor in correction.split("*"):
+                    flip_sim_all_faults.set_pauli_flip(
+                        factor[0], qubit_index=int(factor[1:]), instance_index=index,
+                    )
         self.x_dem_correction_to_local_detector_flips = csc_matrix(flip_sim_all_faults.get_detector_flips().T)
         self.x_dem_correction_to_local_measurement_flips = csc_matrix(flip_sim_all_faults.get_measurement_flips().T)
         new_flip_end = time.time()
@@ -365,23 +363,17 @@ class css_detector_module():
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
-            assert "*" not in correction[0] # for the moment assume the fault are only weight 1 paulis
+            assert self.allow_pauli_products or "*" not in correction[0]
         flip_sim_all_faults = stim.FlipSimulator(batch_size=num_faults, disable_stabilizer_randomization=True)
         for instruction_location, instruction in enumerate(circuit):
             gate_data = stim.gate_data(instruction.name)
             if not (gate_data.is_noisy_gate and not gate_data.produces_measurements):
                 flip_sim_all_faults.do(instruction)
             for index, correction in corrections_at_location[instruction_location]:
-                # logger.info(f"Instruction location: {instruction_location}")
-                # logger.info(f"Index: {index}")
-                pauli = correction[0]
-                qubit = int(correction[1:])
-                # logger.info(f"Pauli: {pauli}, Qubit: {qubit}")
-                flip_sim_all_faults.set_pauli_flip(
-                    pauli,
-                    qubit_index=qubit,
-                    instance_index=index
-                )
+                for factor in correction.split("*"):
+                    flip_sim_all_faults.set_pauli_flip(
+                        factor[0], qubit_index=int(factor[1:]), instance_index=index,
+                    )
         self.z_dem_correction_to_local_detector_flips = csc_matrix(flip_sim_all_faults.get_detector_flips().T)
         self.z_dem_correction_to_local_measurement_flips = csc_matrix(flip_sim_all_faults.get_measurement_flips().T)
         new_flip_end = time.time()
@@ -598,7 +590,7 @@ class css_detector_module():
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
-            assert "*" not in correction[0] # for the moment assume the fault are only weight 1 paulis
+            assert self.allow_pauli_products or "*" not in correction[0]
         flip_sim_all_faults = stim.FlipSimulator(batch_size=num_faults, disable_stabilizer_randomization=True)
         flip_sim_all_faults.do(circuit_before_module)
         for instruction_location, instruction in enumerate(circuit):
@@ -606,16 +598,10 @@ class css_detector_module():
             if not (gate_data.is_noisy_gate and not gate_data.produces_measurements):
                 flip_sim_all_faults.do(instruction)
             for index, correction in corrections_at_location[instruction_location]:
-                # logger.info(f"Instruction location: {instruction_location}")
-                # logger.info(f"Index: {index}")
-                pauli = correction[0]
-                qubit = int(correction[1:])
-                # logger.info(f"Pauli: {pauli}, Qubit: {qubit}")
-                flip_sim_all_faults.set_pauli_flip(
-                    pauli,
-                    qubit_index=qubit,
-                    instance_index=index
-                )
+                for factor in correction.split("*"):
+                    flip_sim_all_faults.set_pauli_flip(
+                        factor[0], qubit_index=int(factor[1:]), instance_index=index,
+                    )
         flip_sim_all_faults.do(circuit_after_module)
         self.x_dem_correction_to_detector_flips = csc_matrix(flip_sim_all_faults.get_detector_flips().T)
         self.x_dem_correction_to_measurement_flips = csc_matrix(flip_sim_all_faults.get_measurement_flips().T)
@@ -661,7 +647,7 @@ class css_detector_module():
         corrections_at_location = defaultdict(list)
         for index, correction in enumerate(correction_array):
             corrections_at_location[correction[1]].append((index, correction[0]))
-            assert "*" not in correction[0] # for the moment assume the fault are only weight 1 paulis
+            assert self.allow_pauli_products or "*" not in correction[0]
         flip_sim_all_faults = stim.FlipSimulator(batch_size=num_faults, disable_stabilizer_randomization=True)
         flip_sim_all_faults.do(circuit_before_module)
         for instruction_location, instruction in enumerate(circuit):
@@ -669,16 +655,10 @@ class css_detector_module():
             if not (gate_data.is_noisy_gate and not gate_data.produces_measurements):
                 flip_sim_all_faults.do(instruction)
             for index, correction in corrections_at_location[instruction_location]:
-                # logger.info(f"Instruction location: {instruction_location}")
-                # logger.info(f"Index: {index}")
-                pauli = correction[0]
-                qubit = int(correction[1:])
-                # logger.info(f"Pauli: {pauli}, Qubit: {qubit}")
-                flip_sim_all_faults.set_pauli_flip(
-                    pauli,
-                    qubit_index=qubit,
-                    instance_index=index
-                )
+                for factor in correction.split("*"):
+                    flip_sim_all_faults.set_pauli_flip(
+                        factor[0], qubit_index=int(factor[1:]), instance_index=index,
+                    )
         flip_sim_all_faults.do(circuit_after_module)
         self.z_dem_correction_to_detector_flips = csc_matrix(flip_sim_all_faults.get_detector_flips().T)
         self.z_dem_correction_to_measurement_flips = csc_matrix(flip_sim_all_faults.get_measurement_flips().T)

@@ -872,3 +872,16 @@ and strict projected modes and the sole evaluation-only oracle intact. Native
 Hex H5 uses full-prefix projection; downstream local DEM consumers can use the
 coupling region (including post-CNOT idle) and must label excluded prep/storage
 residuals. No claim of an exact conditional posterior is permitted.
+
+
+HEX-N2 implements the authorized integration: optional builder/adapter
+noise_model, native preparation compilation from custom channels, two explicit
+idle regions, noise-aware cache/provenance and causal tests. The opt-in CSS
+allow_pauli_products flag propagates all factors together in one setup lane;
+legacy default guard is unchanged. Replace native zero placeholders before
+Stim can fuse adjacent gates. Custom metadata distinguishes native H5
+full-prefix projection from downstream local scope; do not silently change
+Hex True to a local policy. Keep control-idle errors even when invisible to
+that stage's target syndrome, and keep the terminal oracle evaluation-only.
+No bench pin or source is updated here. After the N2 commit/push stop; no
+production simulation or further protocol extension is authorized.

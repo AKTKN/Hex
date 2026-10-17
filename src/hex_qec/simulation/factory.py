@@ -41,6 +41,7 @@ class FactoryCacheKey:
     gap_policy: str = "surface_two_boundary_hamming_v1"
     create_codecapacity_dem: bool = False
     projected_prior_sha256: tuple[str, ...] = ()
+    noise_model_sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -260,6 +261,8 @@ class CompiledFactory:
             key = replace(key, create_codecapacity_dem=True, decoder_policy="factory_causal_projected_v1",
                           gap_policy="surface_two_boundary_projected_v1",
                           projected_prior_sha256=tuple(p.configuration_sha256 for p in decoder.projected_priors))
+        if "noise_model_sha256" in metadata:
+            key = replace(key, noise_model_sha256=metadata["noise_model_sha256"])
         return cls(key, snapshot.circuit, decoder,
                    _compile_sampler(snapshot.circuit, seed))
 

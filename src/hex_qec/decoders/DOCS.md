@@ -181,3 +181,19 @@ rounding limits and callback responsibilities are in
 explains why observed prep-context/nonlinear responses prevent exact marginal,
 conditional-posterior or LER-gain claims. The fast repository selection passes
 261 tests; larger statistical cases are intentionally excluded.
+
+
+## HEX-N2 factory custom noise
+
+Factory projected fault enumeration now assigns the separate inter-stage
+storage_idle region to its stage. Post-CNOT control idle already belongs to
+the coupling region. Native H5 True keeps full-prefix projection and strict
+complete-signature/graph checks; it therefore retains both physical sources.
+Custom preparation priors/maps are rebuilt from the actual noisy preparation
+before any projected model. Downstream module-local DEM consumers may exclude
+pre-coupling storage/preparation residuals under their declared approximation;
+no such inference change is made to Hex itself. False recovery and both gap
+metrics retain their existing meanings; survivor post-CNOT faults can be
+invisible to the target syndrome. See the
+[noise guide](../../../docs/factory_noise_model.md); this is not a conditional
+posterior or a confidence certificate for survivor correctness.

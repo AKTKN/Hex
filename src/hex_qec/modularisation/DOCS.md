@@ -125,3 +125,24 @@ False retains historical per-callback converter construction and all seeded
 behavior. Cached handles are synchronous/worker-local and must not be mutated.
 See [the H5 guide](../../../docs/logical_zero_factory_h5.md) for exact equations,
 prior validity, hashes, supported/rejected settings and whole-audit evidence.
+
+
+## HEX-N2 preparation consistency and idle ledger
+
+`css_detector_module` adds keyword-only `allow_pauli_products=False`.
+Factory custom preparations opt into True. All factors of a joint Stim
+representative propagate in the same setup lane in both local-history and
+global correction maps; the old single-Pauli guard remains the default.
+PreparationFramePlan applies the same rule to its end-frame maps. Probabilities,
+legacy matchable edge projection and weight formula are unchanged. This is
+support for a representative, not new graph decomposition or noise support
+for another protocol.
+
+`FactoryCodeAdapter.prepare` may accept optional noise_model; None callers
+still receive only the original positional arguments. TeleportationStage adds
+optional post_cnot_control_idle (nested at coupling end) and storage_idle
+(after refresh, before coupling). Their default None fields preserve old
+positional construction and H5 repr-based identities. The storage region
+has its own projected-mechanism owner. See the
+[noise guide](../../../docs/factory_noise_model.md) for exact timing/placement
+and strict signed-flow/oracle boundaries.

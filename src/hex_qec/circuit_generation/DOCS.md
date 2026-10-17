@@ -73,3 +73,16 @@ Multipliers/durations are finite nonnegative reals; resolved channels are in
 stage adds no channel to existing circuits. See the
 [noise guide](../../../docs/factory_noise_model.md) for equations, opt-in
 semantics, timing boundaries and planned factory-only integration.
+
+
+## HEX-N2 factory-only channel generation
+
+`RotatedSurfaceCodeAdapter.prepare(..., *, noise_model=None)` preserves the
+legacy call. A FactoryNoiseModel builds from native zero-noise surface
+instructions, replacing placeholders before adjacent gates can fuse. Reset
+errors follow R/RX/MR, H gets one-qubit depolarization, CX/CZ gets two-qubit
+depolarization, and X readout error precedes physical Z MR. Only then is the
+native CSS module compiled, including its actual DEM priors and repair maps.
+Factory preparations opt into exact joint-Pauli representative propagation;
+no event is independently split to evade graph checks. No generic idle layer
+is inserted. See [noise model](../../../docs/factory_noise_model.md).

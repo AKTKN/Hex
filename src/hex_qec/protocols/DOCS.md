@@ -98,3 +98,21 @@ independent. See [the H5 guide](../../../docs/logical_zero_factory_h5.md) for
 full contracts, public imports, tests, projected-prefix policy, min-sum and
 reference-context limits. Whole fast selection: 261 passed, two larger
 statistical cases excluded. No paper/threshold/LER-improvement claim is made.
+
+
+## HEX-N2 configurable factory physical noise
+
+FactoryCircuitBuilder adds keyword-only noise_model=None. A frozen
+FactoryNoiseModel supplies operation multipliers and the two explicit idle
+windows; probabilities resolve before preparation construction. None follows
+the original hex_uniform path exactly. Post-CNOT idle acts on the survivor's
+data after the complete transversal gate and lies inside coupling. Storage
+idle acts on the old survivor only at stages >=1, after the other support's
+plus refresh. Initial preparations are scheduled in parallel. Stage regions
+and alternating data supports are validated with strict signed flows/DEM.
+The sole ideal oracle is unchanged. Custom metadata includes immutable
+canonical parameter JSON/hash, physical-noise hash, effective probabilities,
+schedule and full-prefix versus module-local prior scope. Full Knill,
+Fig.4(d), Steane and adaptive APIs/physics are unchanged. See
+[factory noise](../../../docs/factory_noise_model.md) for runnable usage,
+channel conventions, caching and approximation limits.

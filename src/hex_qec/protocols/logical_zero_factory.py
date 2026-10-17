@@ -6,6 +6,7 @@ The sole ideal output readout is an explicitly separate evaluation region.
 
 from dataclasses import dataclass
 import hashlib
+import json
 import math
 from numbers import Real
 from types import MappingProxyType
@@ -21,6 +22,7 @@ from hex_qec.modularisation.factory import (
 )
 from hex_qec.modularisation.module_generation import generate_transversal_cnot_module
 from hex_qec.circuit_generation.circuit_generation import qubit_measurement
+from hex_qec.circuit_generation.factory_noise import FactoryNoiseModel
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,28 @@ class FactoryCircuitBundle:
             if (stage.coupling.instructions.stop > stage.measurement.instructions.start
                     or stage.measurement.instructions.stop > self.oracle.instructions.start):
                 raise ValueError("measurement violates the causal stage boundary")
+            for region, block, lower, upper in (
+                (stage.post_cnot_control_idle, control, stage.coupling.instructions.start,
+                 stage.coupling.instructions.stop),
+                (stage.storage_idle, target, stage.preparations[-1].instructions.stop,
+                 stage.coupling.instructions.start),
+            ):
+                if region is None:
+                    continue
+                if (region is stage.storage_idle and index == 0
+                        or not lower <= region.instructions.start < region.instructions.stop <= upper
+                        or region.measurements.start != stage.measurement.measurements.start
+                        or region.measurements.stop != region.measurements.start):
+                    raise ValueError("idle region violates the causal stage boundary")
+                fragment = self.circuit[region.instructions.slice]
+                if (len(fragment) != 1 or fragment[0].name != "DEPOLARIZE1"
+                        or tuple(t.value for t in fragment[0].targets_copy()) != block.data_qubits):
+                    raise ValueError("idle region must affect exactly its owning block's data")
+                if region is stage.post_cnot_control_idle:
+                    if (region.instructions.stop != stage.coupling.instructions.stop
+                            or any(i.name == "CX" for i in self.circuit[region.instructions.stop:
+                                                                      stage.measurement.instructions.start])):
+                        raise ValueError("control idle must follow the complete transversal CNOT")
             if any(not stage.measurement.measurements.start <= record < stage.measurement.measurements.stop
                    for record in stage.raw_logical_outcome.records):
                 raise ValueError("logical byproduct must use only its own readout records")
@@ -124,7 +148,8 @@ class FactoryCircuitBuilder:
     """
 
     def __init__(self, adapter: FactoryCodeAdapter, preparation: PreparationPlan,
-                 physical_error: float = 0.001, *, T_tel: int = 1):
+                 physical_error: float = 0.001, *, T_tel: int = 1,
+                 noise_model: FactoryNoiseModel | None = None):
         if (isinstance(physical_error, bool) or not isinstance(physical_error, Real)
                 or not math.isfinite(physical_error) or not 0 <= physical_error <= 0.5):
             raise ValueError("physical_error must be finite and in [0, 0.5]")
@@ -132,6 +157,13 @@ class FactoryCircuitBuilder:
         self.physical_error = float(physical_error)
         _positive_integer(T_tel, "T_tel")
         self.T_tel = int(T_tel)
+        if noise_model is not None and not isinstance(noise_model, FactoryNoiseModel):
+            raise ValueError("noise_model must be FactoryNoiseModel or None")
+        self.noise_model = noise_model
+        self._probabilities = (None if noise_model is None
+                               else noise_model.operation_probabilities(self.physical_error))
+        self._idle_probabilities = ((0., 0.) if noise_model is None
+                                   else noise_model.idle_probabilities(self.physical_error, preparation.r_plus))
 
     def build(self) -> FactoryCircuitBundle:
         code, plan, p = self.adapter.code, self.preparation, self.physical_error
@@ -155,8 +187,12 @@ class FactoryCircuitBuilder:
         def prepare(block: BlockSupport, basis: str, rounds: int, stage_index: int) -> CircuitRegion:
             key = (block.name, basis, rounds)
             template = templates.get(key)
-            module = (template.module if template is not None
-                      else self.adapter.prepare(block, basis, rounds, p))
+            if template is not None:
+                module = template.module
+            elif self.noise_model is None:
+                module = self.adapter.prepare(block, basis, rounds, p)
+            else:
+                module = self.adapter.prepare(block, basis, rounds, p, noise_model=self.noise_model)
             start_instruction, start_record = len(circuit), circuit.num_measurements
             detector_metadata = [(basis, check) for check in range(len(code.x_checks if basis == "X" else code.z_checks))]
             for _ in range(1, rounds):
@@ -212,12 +248,28 @@ class FactoryCircuitBuilder:
         zero_region = prepare(a, "Z", plan.r_0, 0)
         stages = []
         memory, fresh = a, b
+
+        def idle_region(name, block, probability):
+            if not probability:
+                return None
+            start = len(circuit)
+            circuit.append("DEPOLARIZE1", list(block.data_qubits), probability)
+            return CircuitRegion(name, IndexRange(start, len(circuit)),
+                                 IndexRange(circuit.num_measurements, circuit.num_measurements))
+
         for stage_index in range(self.T_tel):
             plus_region = prepare(fresh, "X", plan.r_plus, stage_index)
             regions = (zero_region, plus_region) if stage_index == 0 else (plus_region,)
+            # Initial zero/plus preps are scheduled in parallel. Only later
+            # refreshes expose the stored survivor, with no gates on it during
+            # that interval; aggregate the depolarizing channel at its end.
+            storage_idle = (idle_region("during_plus_preparation", memory, self._idle_probabilities[1])
+                            if stage_index else None)
             inputs = check_flows(len(circuit))
             gate_start = len(circuit)
-            circuit += generate_transversal_cnot_module(p, list(fresh.data_qubits), list(memory.data_qubits)).circuit
+            gate_p = p if self._probabilities is None else self._probabilities["two_qubit"]
+            circuit += generate_transversal_cnot_module(gate_p, list(fresh.data_qubits), list(memory.data_qubits)).circuit
+            post_idle = idle_region("post_cnot_control", fresh, self._idle_probabilities[0])
             coupling = CircuitRegion(f"cnot_{fresh.name}_to_{memory.name}", IndexRange(gate_start, len(circuit)),
                                      IndexRange(circuit.num_measurements, circuit.num_measurements))
             for index in range(len(code.x_checks)):
@@ -227,7 +279,8 @@ class FactoryCircuitBuilder:
             outputs = check_flows(len(circuit))
 
             start_instruction, start_record = len(circuit), circuit.num_measurements
-            qubit_measurement(circuit, "z", {"data_qubits": list(memory.data_qubits)}, p)
+            readout_p = p if self._probabilities is None else self._probabilities["measurement"]
+            qubit_measurement(circuit, "z", {"data_qubits": list(memory.data_qubits)}, readout_p)
             for position, qubit in enumerate(memory.data_qubits):
                 records.append(MeasurementRecord(start_record + position, qubit, "Z", memory.name,
                                                   "teleport_z", stage_index))
@@ -242,7 +295,8 @@ class FactoryCircuitBuilder:
                                         IndexRange(start_record, circuit.num_measurements))
             stages.append(TeleportationStage(stage_index, memory.name, fresh.name, regions, coupling, measurement,
                           inputs, outputs, tuple(terminal),
-                          RecordParity(tuple(start_record + q for q in code.logical_z))))
+                          RecordParity(tuple(start_record + q for q in code.logical_z)),
+                          post_cnot_control_idle=post_idle, storage_idle=storage_idle))
             memory, fresh = fresh, memory
 
         oracle_start_instruction, oracle_start_record = len(circuit), circuit.num_measurements
@@ -252,7 +306,7 @@ class FactoryCircuitBuilder:
                                               evaluation_only=True))
         oracle = CircuitRegion("oracle_z", IndexRange(oracle_start_instruction, len(circuit)),
                                IndexRange(oracle_start_record, circuit.num_measurements))
-        metadata = MappingProxyType({
+        metadata = {
             "protocol": "logical_zero_factory", "T_tel": self.T_tel, "noise": "hex_uniform",
             "physical_error": p, "r_0": plan.r_0, "r_plus": plan.r_plus,
             "cnot_direction": "fresh_plus_to_memory", "live_blocks": 2,
@@ -261,7 +315,24 @@ class FactoryCircuitBuilder:
             "terminal_label_convention": "codecapacity_recovery_then_logical_Z",
             "preparation_prior": "hex_legacy_matchable",
             "circuit_sha256": hashlib.sha256(str(circuit).encode()).hexdigest(),
-        })
+        }
+        if self.noise_model is not None:
+            model = self.noise_model
+            canonical = json.dumps(model.as_dict(), sort_keys=True, separators=(",", ":"), allow_nan=False)
+            metadata.update({
+                "noise": "factory_operation_specific_v1",
+                "noise_model_json": canonical,
+                "noise_model_sha256": model.configuration_sha256,
+                "physical_noise_sha256": hashlib.sha256(repr((p, canonical)).encode()).hexdigest(),
+                "post_cnot_control_idle_probability": self._idle_probabilities[0],
+                "storage_idle_probability": self._idle_probabilities[1],
+                "initial_preparation_schedule": "parallel_no_storage_idle",
+                "storage_idle_placement": "after_refresh_before_local_cnot_boundary_stages_ge_1",
+                "post_cnot_idle_placement": "coupling_region_surviving_control_data_only",
+                "native_projected_prior_scope": "h5_full_causal_prefix_fixed_reference",
+                "module_local_prior_scope": "cnot_readout_includes_post_cnot_idle_excludes_prep_storage_residuals",
+            })
+        metadata = MappingProxyType(metadata)
         bundle = FactoryCircuitBundle(circuit, code, plan, blocks, MeasurementLedger(tuple(records)),
                                        tuple(stages), tuple(frames), tuple(detectors), oracle, metadata)
         bundle.validate()
